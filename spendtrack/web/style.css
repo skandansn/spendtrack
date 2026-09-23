@@ -612,9 +612,9 @@ tr.skeleton td { padding: 14px 10px; }
   .review-row .pill { display: none; }
   .review-row select { grid-column: 2 / 3; max-width: 100%; min-height: 34px; }
   .review-row .keep { grid-column: 3; min-height: 34px; }
-  #recurring tr { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--grid); }
-  #recurring td { border: none; padding: 8px 0; }
-  #recurring td:first-child { flex: 1; min-width: 0; }
+  #recurring tr, #cashback tr { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--grid); }
+  #recurring td, #cashback td { border: none; padding: 8px 0; }
+  #recurring td:first-child, #cashback td:first-child { flex: 1; min-width: 0; }
   .with-avatar .merchant { overflow: hidden; text-overflow: ellipsis; }
   .budget-edit { grid-template-columns: repeat(2, 1fr); }
   .spark { height: 22px; }
