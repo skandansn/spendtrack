@@ -6,6 +6,16 @@ dashboard you can open on your laptop or install on your phone. Everything is
 stored in one SQLite file on your machine; nothing is sent anywhere except Plaid
 and, if you choose, a model server you run yourself.
 
+![Dashboard in dark mode](docs/screenshots/dashboard-dark.png)
+
+<p align="center">
+  <img src="docs/screenshots/dashboard-light.png" alt="Dashboard in light mode" width="68%">
+  &nbsp;
+  <img src="docs/screenshots/phone.png" alt="Dashboard on a phone" width="26%">
+</p>
+
+<sub>Screenshots use generated demo data.</sub>
+
 ## What it does
 
 - **Syncs every linked account** — cards, checking, savings — through Plaid's
