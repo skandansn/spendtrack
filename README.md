@@ -14,6 +14,8 @@ and, if you choose, a model server you run yourself.
   <img src="docs/screenshots/phone.png" alt="Dashboard on a phone" width="26%">
 </p>
 
+![Accounts and transactions](docs/screenshots/accounts-transactions.png)
+
 <sub>Screenshots use generated demo data.</sub>
 
 ## What it does
