@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<title>spendtrack</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div id="stale" hidden></div>
+
+  <div class="topbar" id="topbar">
+  <header>
+    <h1><span class="brand-mark" aria-hidden="true"></span>spendtrack</h1>
+    <span class="sub" id="last-sync"></span>
+    <span class="spacer"></span>
+    <button id="theme" title="Toggle light / dark">Theme</button>
+    <button id="link" title="Connect another bank or card">+ Link account</button>
+    <button id="sync">Sync now</button>
+  </header>
+
+  <div class="filters">
+    <select id="months">
+      <option value="1">This month</option>
+      <option value="3">Last 3 months</option>
+      <option value="6" selected>Last 6 months</option>
+      <option value="12">Last 12 months</option>
+      <option value="24">Last 24 months</option>
+      <option value="custom">Custom range...</option>
+    </select>
+    <span id="custom-range" class="range" hidden>
+      <input type="date" id="from" aria-label="From">
+      <span class="sub">to</span>
+      <input type="date" id="to" aria-label="To">
+    </span>
+    <select id="account"><option value="">All accounts</option></select>
+    <select id="category"><option value="">All categories</option></select>
+    <input type="search" id="q" placeholder="Search merchant...">
+    <label class="sub"><input type="checkbox" id="transfers"> show transfers</label>
+  </div>
+  </div>
+
+  <main id="main">
+
+  <div class="tiles" id="tiles">
+    <div class="tile skeleton"><div class="sk sk-line"></div><div class="sk sk-value"></div><div class="sk sk-line short"></div></div>
+    <div class="tile skeleton"><div class="sk sk-line"></div><div class="sk sk-value"></div><div class="sk sk-line short"></div></div>
+    <div class="tile skeleton"><div class="sk sk-line"></div><div class="sk sk-value"></div><div class="sk sk-line short"></div></div>
+    <div class="tile skeleton"><div class="sk sk-line"></div><div class="sk sk-value"></div><div class="sk sk-line short"></div></div>
+  </div>
+
+  <section class="card" id="cashback-card" hidden>
+    <h2>Cashback owed</h2>
+    <p class="note" id="cashback-note"></p>
+    <table><tbody id="cashback"></tbody></table>
+  </section>
+
+  <section class="card" id="p2p-card" hidden>
+    <h2>Zelle &amp; Venmo to sort</h2>
+    <p class="note">Filed as transfers until you say otherwise. Paid a friend for dinner? Pick
+      Restaurants and it counts as spend. Paid back for one? The same category nets it out of
+      what you spent. Moving your own money? Keep it a transfer.</p>
+    <table><tbody id="p2p"></tbody></table>
+  </section>
+
+  <section class="card" id="review-card" hidden>
+    <h2>Needs review</h2>
+    <p class="note">No rule matched these merchants and no model was confident. One answer covers every transaction from that merchant, now and later.</p>
+    <div class="review" id="review"></div>
+  </section>
+
+  <div class="row-flex">
+    <section class="card">
+      <h2>Spend by category</h2>
+      <p class="note" id="cat-note">Click a category to filter everything below.</p>
+      <div class="bars" id="by-category"><div class="bar-row skeleton"><div class="sk sk-line"></div><div class="sk sk-bar"></div><div class="sk sk-line"></div></div><div class="bar-row skeleton"><div class="sk sk-line"></div><div class="sk sk-bar"></div><div class="sk sk-line"></div></div><div class="bar-row skeleton"><div class="sk sk-line"></div><div class="sk sk-bar"></div><div class="sk sk-line"></div></div><div class="bar-row skeleton"><div class="sk sk-line"></div><div class="sk sk-bar"></div><div class="sk sk-line"></div></div><div class="bar-row skeleton"><div class="sk sk-line"></div><div class="sk sk-bar"></div><div class="sk sk-line"></div></div><div class="bar-row skeleton"><div class="sk sk-line"></div><div class="sk sk-bar"></div><div class="sk sk-line"></div></div></div>
+    </section>
+
+    <section class="card">
+      <h2>Spend by month</h2>
+      <p class="note">Top 7 categories; everything else grouped as Other.</p>
+      <div class="stack-chart">
+        <div class="y-axis" id="y-axis"></div>
+        <div class="plot">
+          <div class="gridlines" id="gridlines"></div>
+          <div class="columns" id="by-month"></div>
+          <div class="x-axis" id="x-axis"></div>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+  </div>
+
+  <div class="row-flex">
+    <section class="card">
+      <div class="card-head">
+        <h2>Budgets this month</h2>
+        <button id="edit-budgets" class="small">Edit</button>
+      </div>
+      <p class="note">Every account, whatever the filters say. The tick marks where even spending would be today.</p>
+      <div id="budgets"></div>
+    </section>
+
+    <section class="card">
+      <h2>Recurring</h2>
+      <p class="note" id="recurring-note">Steady amount, steady schedule, charged recently.</p>
+      <table><tbody id="recurring"></tbody></table>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Accounts</h2>
+    <p class="note">Balances as of the last sync. Card debt is what you owe now, not the statement balance.</p>
+    <table><tbody id="accounts"></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2>Transactions</h2>
+    <p class="note" id="txn-note"></p>
+    <div class="sort-row">
+      <select id="sort-m">
+        <option value="date">Date</option>
+        <option value="amount">Amount</option>
+        <option value="merchant">Merchant</option>
+        <option value="category">Category</option>
+        <option value="account">Account</option>
+      </select>
+      <button id="sort-dir" title="Reverse sort order">&darr;</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="sortable" data-sort="date">Date</th>
+          <th class="sortable" data-sort="merchant">Merchant</th>
+          <th class="sortable" data-sort="account">Account</th>
+          <th class="sortable" data-sort="category">Category</th>
+          <th class="sortable num" data-sort="amount">Amount</th>
+        </tr>
+      </thead>
+      <tbody id="transactions"><tr class="skeleton"><td colspan="5"><div class="sk sk-line"></div></td></tr><tr class="skeleton"><td colspan="5"><div class="sk sk-line"></div></td></tr><tr class="skeleton"><td colspan="5"><div class="sk sk-line"></div></td></tr><tr class="skeleton"><td colspan="5"><div class="sk sk-line"></div></td></tr><tr class="skeleton"><td colspan="5"><div class="sk sk-line"></div></td></tr><tr class="skeleton"><td colspan="5"><div class="sk sk-line"></div></td></tr></tbody>
+    </table>
+    <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
+      <button id="more">Load more</button>
+      <span class="sub" id="txn-count"></span>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<dialog id="cb-dialog">
+  <form method="dialog" id="cb-form">
+    <h3>Cashback</h3>
+    <p class="sub" id="cb-what"></p>
+    <label>Back
+      <span class="cb-amount">
+        <input type="number" id="cb-value" min="0" step="any" inputmode="decimal" required>
+        <select id="cb-unit"><option value="percent">%</option><option value="amount">$</option></select>
+      </span>
+    </label>
+    <label>Paid out as
+      <select id="cb-payout">
+        <option value="paypal">PayPal (cash)</option>
+        <option value="amex_mr">Amex Membership Rewards</option>
+        <option value="bilt">Bilt points</option>
+      </select>
+    </label>
+    <label>From <input type="text" id="cb-source" list="cb-sources" value="Rakuten"></label>
+    <datalist id="cb-sources">
+      <option value="Rakuten"><option value="TopCashback"><option value="Capital One Shopping">
+    </datalist>
+    <label class="check"><input type="checkbox" id="cb-received"> Already received</label>
+    <p class="cb-preview" id="cb-preview"></p>
+    <p class="err" id="cb-error"></p>
+    <div class="cb-actions">
+      <button type="button" id="cb-remove" class="danger">Remove</button>
+      <span class="spacer"></span>
+      <button type="button" id="cb-cancel">Cancel</button>
+      <button type="submit" id="cb-save" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="tooltip" id="tooltip"></div>
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

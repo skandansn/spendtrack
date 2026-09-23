@@ -1,0 +1,22 @@
+[project]
+name = "spendtrack"
+version = "0.1.0"
+description = "Local-first tracker for bank and credit card spend"
+requires-python = ">=3.11"
+dependencies = [
+    "plaid-python>=20.0.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+spendtrack = "spendtrack.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["spendtrack"]

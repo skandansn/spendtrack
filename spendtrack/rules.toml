@@ -1,0 +1,123 @@
+# Merchant rules, evaluated top to bottom - the first category whose patterns
+# match wins, so order matters. Patterns are case-insensitive regex run against
+# the normalised merchant key. Edit freely: rules reload when the file changes.
+#
+# Anything matched here never reaches the LLM or Laya.
+#
+# Two conventions that matter:
+#   - TOML literal strings (single quotes) so regex backslashes survive.
+#   - Short or substring-prone tokens get \b on both sides. Without it 'MOBIL'
+#     matches 'PAYMENT THANK YOU MOBILE' and 'MACY' matches 'PHARMACY'.
+
+[categories]
+# The fixed taxonomy. Charts stay stable because this list is closed.
+list = [
+  'Groceries', 'Restaurants', 'Coffee', 'Transport', 'Fuel', 'Travel',
+  'Shopping', 'Subscriptions', 'Utilities', 'Rent', 'Health', 'Fitness',
+  'Entertainment', 'Education', 'Personal Care', 'Fees', 'Income',
+  'Transfer', 'Other',
+]
+
+[categories.describe]
+# What each category covers, as Laya sees it. Keep these to two or three words:
+# all 19 share one ~192-token option budget, and full descriptions overflowed it
+# (34% agreement with the rules, against 46% for these).
+Groceries = 'grocery store'
+Restaurants = 'restaurant or food'
+Coffee = 'coffee shop'
+Transport = 'rideshare or transit'
+Fuel = 'gas station'
+Travel = 'airline or hotel'
+Shopping = 'retail store'
+Subscriptions = 'subscription service'
+Utilities = 'phone or utility bill'
+Rent = 'rent'
+Health = 'pharmacy or doctor'
+Fitness = 'gym'
+Entertainment = 'movies or events'
+Education = 'school or tuition'
+'Personal Care' = 'salon or spa'
+Fees = 'bank fee'
+Income = 'salary or refund'
+Transfer = 'card payment or transfer'
+Other = 'other'
+
+[rules]
+# Transfers first: a card autopay also contains the bank's name, and counting
+# it as spend double-counts every purchase already on that card.
+Transfer = [
+  'PAYMENT THANK YOU', 'AUTOPAY', 'ONLINE PAYMENT', 'CARD PAYMENT',
+  'ZELLE', 'VENMO', 'CASH ?APP', 'PAYPAL TRANSFER', 'WIRE TRANSFER',
+  'TRANSFER TO', 'TRANSFER FROM', 'ACH (DEBIT|CREDIT)', 'BILL ?PAY',
+  'E[- ]?PAYMENT', '\bPYMT\b', '\bDEPOSIT\b', 'CREDIT CRD', 'EPAY\b',
+]
+Income = [
+  'PAYROLL', 'DIRECT ?DEP', 'DIR DEP', '\bSALARY\b', 'IRS TREAS', 'TAX REF',
+  'INTEREST PAID', 'CASHBACK BONUS', '\bREWARD',
+]
+Groceries = [
+  'TRADER JOE', 'WHOLE FOODS', 'SAFEWAY', 'KROGER', '\bALDI\b', 'COSTCO',
+  'WEGMANS', 'STOP & ?SHOP', 'STAR MARKET', '\bH MART\b', 'PATEL BROTHERS',
+  'INSTACART', 'SPROUTS', 'PUBLIX', 'MARKET BASKET',
+]
+Coffee = ['STARBUCKS', 'DUNKIN', 'BLUE BOTTLE', '\bPEET', '\bCAFE\b', 'COFFEE']
+Restaurants = [
+  'CHIPOTLE', 'MCDONALD', 'SHAKE SHACK', 'DOORDASH', 'UBER ?EATS', 'GRUBHUB',
+  'SWEETGREEN', 'PANERA', '\bTST\b', '\bCAVA\b', 'HALAL GUYS', 'DOMINO',
+  'PIZZA', 'RESTAURANT', '\bGRILL\b', '\bKITCHEN\b', '\bTAQUERIA\b',
+]
+Transport = [
+  'UBER(?! ?EATS)', '\bLYFT\b', '\bMBTA\b', '\bMTA\b', '\bBART\b', 'TRANSIT',
+  'AMTRAK', 'ZIPCAR', 'PARKING', 'SPOTHERO', 'SUBWAY STATION',
+  '\bCLIPPER\b',
+]
+Fuel = [
+  '\bSHELL\b', 'EXXON', 'CHEVRON', '\bBP\b', 'SUNOCO', '\bMOBIL\b',
+  '\bGULF\b', 'CITGO', 'SPEEDWAY',
+]
+Travel = [
+  'AIRLINES', 'AIRWAYS', 'DELTA AIR', 'UNITED AIR', 'JETBLUE', 'SOUTHWEST AIR',
+  'AIRBNB', 'BOOKING\.COM', 'EXPEDIA', '\bHOTEL', 'MARRIOTT', 'HILTON',
+  '\bHYATT\b', 'CAR RENTAL', '\bHERTZ\b',
+]
+Subscriptions = [
+  'OURARING', 'OURA RING', 'NETFLIX', 'SPOTIFY', '\bHULU\b', 'DISNEY ?PLUS', '\bHBO\b',
+  'YOUTUBE ?PREMIUM', 'APPLE\.COM', 'OPENAI', 'ANTHROPIC', '\bGITHUB\b',
+  '\bADOBE\b', 'DROPBOX', '\bNOTION\b', 'AUDIBLE', 'PATREON', 'ICLOUD',
+]
+Health = [
+  '\bCVS\b', 'WALGREENS', 'RITE AID', 'PHARMACY', '\bDENTAL\b', 'MEDICAL',
+  '\bCLINIC\b', 'HOSPITAL', '\bOPTUM\b', 'QUEST DIAGNOSTIC', 'LABCORP',
+  'ZOCDOC',
+]
+Shopping = [
+  'AMAZON', '\bAMZN\b', '\bTARGET\b', 'WALMART', 'BEST BUY', '\bIKEA\b',
+  'HOME DEPOT', '\bLOWES\b', '\bETSY\b', '\bEBAY\b', 'UNIQLO', '\bH&M\b',
+  '\bZARA\b', '\bNIKE\b', '\bMACY',
+]
+Utilities = [
+  'COMCAST', 'XFINITY', 'VERIZON', 'T[- ]?MOBILE', 'AT&T', 'SPECTRUM',
+  'NATIONAL GRID', 'EVERSOURCE', 'CON ?EDISON', 'ELECTRIC', 'WATER DEPT',
+]
+Rent = ['\bRENT\b', 'PROPERTY MGMT', 'APARTMENT', 'LEASING', 'LANDLORD']
+Fitness = [
+  'PLANET FITNESS', 'EQUINOX', '\bGYM\b', 'CLASSPASS', 'PELOTON', 'CROSSFIT',
+]
+Entertainment = [
+  '\bAMC\b', '\bREGAL\b', 'CINEMA', 'TICKETMASTER', 'STEAM ?GAMES',
+  'PLAYSTATION', '\bXBOX\b', 'NINTENDO', 'EVENTBRITE', 'STUBHUB',
+  # going out and doing something locally - distinct from Fitness (recurring
+  # training) and Travel (the trip itself)
+  'ACTION PARK', 'XTREME ACTION', 'RACEWAY', 'GO ?KART', 'TRAMPOLINE',
+  '\bARCADE\b', 'BOWLING', 'MINI ?GOLF', 'AMUSEMENT', 'WATER ?PARK',
+  '\bZOO\b', 'AQUARIUM', 'MUSEUM',
+]
+Education = [
+  'NORTHEASTERN', 'UNIVERSITY', '\bCOLLEGE\b', 'COURSERA', '\bUDEMY\b',
+  'TUITION', 'BOOKSTORE', 'PEARSON', '\bCHEGG\b',
+]
+'Personal Care' = ['\bSALON\b', 'BARBER', 'SEPHORA', '\bULTA\b', '\bSPA\b', '\bNAILS\b']
+Fees = [
+  'ANNUAL FEE', 'LATE FEE', 'INTEREST CHARGE', 'FOREIGN TRANSACTION',
+  'OVERDRAFT', 'ATM FEE', 'SERVICE CHARGE', 'WIRE FEE',
+]
