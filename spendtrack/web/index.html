@@ -62,6 +62,12 @@
     <table><tbody id="cashback"></tbody></table>
   </section>
 
+  <section class="card" id="split-card" hidden>
+    <h2>Owed to you</h2>
+    <p class="note" id="split-note"></p>
+    <table><tbody id="split"></tbody></table>
+  </section>
+
   <section class="card" id="p2p-card" hidden>
     <h2>Zelle &amp; Venmo to sort</h2>
     <p class="note">Filed as transfers until you say otherwise. Paid a friend for dinner? Pick
@@ -154,6 +160,34 @@
 
   </main>
 </div>
+
+<dialog id="sp-dialog">
+  <form method="dialog" id="sp-form">
+    <h3>Split this</h3>
+    <p class="sub" id="sp-what"></p>
+    <label><span id="sp-label">Split between</span>
+      <span class="cb-amount">
+        <input type="number" id="sp-value" min="0" step="any" inputmode="decimal" value="2" required>
+        <select id="sp-unit">
+          <option value="ways">people, evenly</option>
+          <option value="amount">dollars, owed to me</option>
+          <option value="all">all of it - none is mine</option>
+        </select>
+      </span>
+    </label>
+    <label>With <input type="text" id="sp-note" placeholder="flatmate, Priya, the group..."></label>
+    <label class="check"><input type="checkbox" id="sp-rule">
+      Split every charge from this merchant the same way</label>
+    <p class="cb-preview" id="sp-preview"></p>
+    <p class="err" id="sp-error"></p>
+    <div class="cb-actions">
+      <button type="button" id="sp-remove" class="danger">Remove</button>
+      <span class="spacer"></span>
+      <button type="button" id="sp-cancel">Cancel</button>
+      <button type="submit" id="sp-save" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="cb-dialog">
   <form method="dialog" id="cb-form">

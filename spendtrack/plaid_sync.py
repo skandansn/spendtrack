@@ -376,6 +376,30 @@ def carry_marks(conn: sqlite3.Connection, pairs: list[tuple[str, str]]) -> None:
     )
 
 
+def apply_split_rules(conn: sqlite3.Connection, txn_ids: list[str]) -> int:
+    """Split newly arrived charges from merchants you have a standing rule for.
+
+    This is what makes a shared rent or utility net itself every month without
+    you touching it. A split you set by hand is left alone - `split_source` of
+    'manual' outranks the rule, the same way a category override outranks a
+    categorisation rule.
+    """
+    if not txn_ids:
+        return 0
+    marks = ",".join("?" * len(txn_ids))
+    cur = conn.execute(f"""
+        UPDATE transactions
+           SET split_owed  = ROUND(amount * (1 - (
+                   SELECT my_share FROM split_rules r WHERE r.merchant_key = transactions.merchant_key)), 2),
+               split_note   = (SELECT note FROM split_rules r WHERE r.merchant_key = transactions.merchant_key),
+               split_source = 'rule'
+         WHERE txn_id IN ({marks})
+           AND COALESCE(split_source, '') != 'manual'
+           AND merchant_key IN (SELECT merchant_key FROM split_rules)
+    """, txn_ids)
+    return cur.rowcount
+
+
 def sync_item(conn: sqlite3.Connection, api: plaid_api.PlaidApi,
               item_id: str, access_token: str, cursor: str | None,
               use_llm: bool = True) -> dict:
@@ -411,6 +435,7 @@ def sync_item(conn: sqlite3.Connection, api: plaid_api.PlaidApi,
             conn.executemany(_UPSERT_TXN, rows)
             carry_marks(conn, [(r["pending_transaction_id"], r["txn_id"])
                                   for r in rows if r["pending_transaction_id"]])
+            apply_split_rules(conn, [r["txn_id"] for r in rows])
         if removed:
             conn.executemany(
                 "DELETE FROM transactions WHERE txn_id = ?",

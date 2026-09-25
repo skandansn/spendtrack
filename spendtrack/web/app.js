@@ -369,6 +369,117 @@ function wireCashback() {
   });
 }
 
+// --- splitting --------------------------------------------------------------
+
+const sp = { txn: null };
+
+function openSplit(t) {
+  sp.txn = t;
+  const has = t.split_owed > 0;
+  $("sp-what").textContent = `${t.merchant_name || t.merchant_key} · ${t.date} · ${money(t.amount)}`;
+  // an existing even split reopens as "N ways"; anything else as a dollar figure
+  const whole = has && Math.abs(t.split_owed - t.amount) < 0.005;
+  // guard the divide: a whole-charge split leaves nothing to divide by
+  const ways = has && !whole ? t.amount / (t.amount - t.split_owed) : 2;
+  const even = has && !whole && Math.abs(ways - Math.round(ways)) < 0.01 && Math.round(ways) <= 10;
+  $("sp-unit").value = whole ? "all" : (!has || even) ? "ways" : "amount";
+  $("sp-value").value = !has || whole ? 2 : even ? Math.round(ways) : t.split_owed.toFixed(2);
+  $("sp-note").value = t.split_note || "";
+  $("sp-rule").checked = t.split_source === "rule";
+  $("sp-remove").hidden = !has;
+  $("sp-error").textContent = "";
+  previewSplit();
+  $("sp-dialog").showModal();
+  $("sp-value").focus();
+}
+
+function splitOwedDollars() {
+  // "N ways" counts you among the N, so N = 1 is you alone, not "all theirs".
+  // That needs its own mode rather than a number.
+  if ($("sp-unit").value === "all") return sp.txn.amount;
+  const v = parseFloat($("sp-value").value);
+  if (!(v > 0)) return 0;
+  if ($("sp-unit").value === "amount") return Math.min(v, sp.txn.amount);
+  return v < 1 ? 0 : Math.round(sp.txn.amount * (1 - 1 / v) * 100) / 100;
+}
+
+function previewSplit() {
+  // In "all of it" mode the number means nothing, so hide it rather than just
+  // disabling it - a greyed-out box still reads as something to fill in.
+  const unit = $("sp-unit").value;
+  const whole = unit === "all";
+  $("sp-value").hidden = whole;
+  $("sp-value").required = !whole;
+  $("sp-label").textContent = whole ? "Whose is it"
+    : unit === "amount" ? "They owe me" : "Split between";
+  const owed = splitOwedDollars();
+  const mine = Math.max(sp.txn.amount - owed, 0);
+  $("sp-preview").innerHTML = owed > 0
+    ? (mine < 0.005
+        ? `${money(owed)} owed to you &middot; <strong>none of it counts as your spend</strong>`
+        : `${money(owed)} owed to you &middot; counts as <strong>${money(mine)}</strong> of your spend`)
+    : "";
+}
+
+function wireSplit() {
+  for (const id of ["sp-value", "sp-unit"]) $(id).addEventListener("input", previewSplit);
+  $("sp-cancel").addEventListener("click", () => $("sp-dialog").close());
+  $("sp-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const unit = $("sp-unit").value;
+    const ways = parseFloat($("sp-value").value);
+    if (unit !== "all" && !(ways > 0)) {
+      $("sp-error").textContent = "Enter a number first.";
+      return;
+    }
+    const body = unit === "all" ? { share: 0 }
+               : unit === "ways" ? { share: 1 / ways }
+               : { owed: splitOwedDollars() };
+    try {
+      await api(`/api/transactions/${sp.txn.txn_id}/split`, json("PUT", {
+        ...body,
+        note: $("sp-note").value,
+        apply_to_merchant: $("sp-rule").checked,
+      }));
+      $("sp-dialog").close();
+      reload();
+    } catch (err) {
+      $("sp-error").textContent = err.message.replace(/^\d+ /, "");
+    }
+  });
+  $("sp-remove").addEventListener("click", async () => {
+    const dropRule = sp.txn.split_source === "rule"
+      && confirm("Also stop splitting every future charge from this merchant?");
+    await api(`/api/transactions/${sp.txn.txn_id}/split?drop_rule=${dropRule}`, { method: "DELETE" });
+    $("sp-dialog").close();
+    reload();
+  });
+}
+
+function renderSplitOwed(owed) {
+  $("split-card").hidden = !owed.rows.length;
+  if (!owed.rows.length) return;
+  $("split-note").innerHTML = `${money(owed.outstanding)} you fronted and have not marked repaid. `
+    + `${money(owed.p2p_received)} has come back through Zelle or Venmo over this period `
+    + `(${owed.p2p_count} payment${owed.p2p_count === 1 ? "" : "s"}) — tick the ones settled.`;
+  $("split").innerHTML = owed.rows.map((r) => `<tr>
+    <td><div class="with-avatar">${avatar(null, r.merchant)}
+      <span class="merchant">${r.merchant}<span class="raw">${r.date}${
+        r.split_note ? ` &middot; ${r.split_note}` : ""}${
+        r.split_source === "rule" ? " &middot; rule" : ""}</span></span></div></td>
+    <td class="num">${money(r.split_owed)}<div class="acct">of ${money(r.amount)}</div></td>
+    <td class="num"><button class="cb-link" data-settled="${r.txn_id}">Mark repaid</button></td>
+  </tr>`).join("");
+
+  for (const btn of $("split").querySelectorAll("[data-settled]")) {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      await api(`/api/transactions/${btn.dataset.settled}/split/settled`, json("POST", { settled: true }));
+      reload();
+    });
+  }
+}
+
 // --- needs review -----------------------------------------------------------
 
 function renderReview(rows) {
@@ -662,14 +773,30 @@ function renderAccounts(rows) {
 
 // With cashback the charge is struck through beside what it really cost, so the
 // statement figure is never hidden.
+function splitLabel(t) {
+  const share = t.split_owed / t.amount;
+  if (Math.abs(share - 1) < 0.005) return "all theirs";
+  // a clean half, third or quarter reads better than "50% split"
+  for (const [n, name] of [[2, "½"], [3, "⅓"], [4, "¼"]]) {
+    if (Math.abs(share - (1 - 1 / n)) < 0.005) return `${name} split`;
+  }
+  return `${money(t.split_owed)} owed`;
+}
+
 function amountCell(t) {
   if (t.amount <= 0) return `<td class="num credit">${money(-t.amount)}</td>`;
-  if (!(t.cashback > 0)) {
-    return `<td class="num">${money(-t.amount)}
-      <button class="cb-link" data-cb="${t.txn_id}">+ cashback</button></td>`;
-  }
-  return `<td class="num"><s class="was">${money(-t.amount)}</s> ${money(-(t.amount - t.cashback))}
-    <button class="cb-link set ${t.cashback_received ? "" : "pending"}" data-cb="${t.txn_id}">${cbLabel(t)}</button></td>`;
+  const net = t.amount - (t.cashback || 0) - (t.split_owed || 0);
+  const cb = t.cashback > 0
+    ? `<button class="cb-link set ${t.cashback_received ? "" : "pending"}" data-cb="${t.txn_id}">${cbLabel(t)}</button>`
+    : `<button class="cb-link" data-cb="${t.txn_id}">+ cashback</button>`;
+  const sp = t.split_owed > 0
+    ? `<button class="cb-link set ${t.split_settled ? "" : "pending"}" data-sp="${t.txn_id}">${splitLabel(t)}</button>`
+    : `<button class="cb-link" data-sp="${t.txn_id}">+ split</button>`;
+  // strike the original only when something actually reduced it
+  const shown = net === t.amount
+    ? money(-t.amount)
+    : `<s class="was">${money(-t.amount)}</s> ${money(-net)}`;
+  return `<td class="num">${shown}<span class="adj">${cb}${sp}</span></td>`;
 }
 
 function renderTransactions(rows, append) {
@@ -705,6 +832,12 @@ function renderTransactions(rows, append) {
     const row = rows.find((r) => r.txn_id === btn.dataset.cb);
     btn.dataset.bound = "1";
     if (row) btn.addEventListener("click", () => openCashback(row));
+  }
+
+  for (const btn of tbody.querySelectorAll("button[data-sp]:not([data-bound])")) {
+    const row = rows.find((r) => r.txn_id === btn.dataset.sp);
+    btn.dataset.bound = "1";
+    if (row) btn.addEventListener("click", () => openSplit(row));
   }
 
   for (const sel of tbody.querySelectorAll("select[data-txn]:not([data-bound])")) {
@@ -799,7 +932,7 @@ async function reload() {
   const picker = new URLSearchParams(scope);
   if (state.category) scope.set("category", state.category);
   try {
-    const [summary, byCat, byMonth, accts, txns, review, budgets, recurring, owed, p2p] = await Promise.all([
+    const [summary, byCat, byMonth, accts, txns, review, budgets, recurring, owed, p2p, split] = await Promise.all([
       api(`/api/summary?${scope}`),
       api(`/api/spend/by-category?${picker}`),
       api(`/api/spend/by-month?${scope}`),
@@ -810,10 +943,12 @@ async function reload() {
       api(`/api/recurring`),
       api(`/api/cashback/pending`),
       api(`/api/p2p?${new URLSearchParams(period())}`),
+      api(`/api/split/owed?${new URLSearchParams(period())}`),
     ]);
     renderTiles(summary, owed);
     renderCashback(owed);
     renderP2P(p2p);
+    renderSplitOwed(split);
     renderByMonth(byMonth);   // assigns colours; must run before anything using colorFor
     renderByCategory(byCat);
     renderReview(review);
@@ -1030,6 +1165,7 @@ function markStale(isStale) {
   if (saved) document.documentElement.setAttribute("data-theme", saved);
   wire();
   wireCashback();
+  wireSplit();
   watchScroll();
   revealOnScroll();
   try {

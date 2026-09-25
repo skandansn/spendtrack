@@ -91,6 +91,18 @@ CREATE TABLE IF NOT EXISTS budgets (
     monthly  REAL NOT NULL CHECK (monthly > 0)
 );
 
+-- A merchant you always split the same way - rent with a flatmate, a shared
+-- utility. Keyed on merchant like category_overrides, so it applies to every
+-- future charge without you touching it again.
+CREATE TABLE IF NOT EXISTS split_rules (
+    merchant_key TEXT PRIMARY KEY,
+    -- 0 is legitimate: a charge that is entirely someone else's, like paying
+    -- a friend's subscription on your card every month.
+    my_share     REAL NOT NULL CHECK (my_share >= 0 AND my_share <= 1),
+    note         TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id     TEXT,
@@ -117,6 +129,13 @@ COLUMNS = [
     ("transactions", "cashback_payout", "TEXT"),     # paypal | amex_mr | bilt
     ("transactions", "cashback_source", "TEXT"),
     ("transactions", "cashback_received", "INTEGER NOT NULL DEFAULT 0"),
+    # Someone else's share of a bill you fronted. Same shape as cashback: spend
+    # totals use amount - cashback - split_owed, so a $120 dinner split in half
+    # costs you $60 rather than $120.
+    ("transactions", "split_owed", "REAL NOT NULL DEFAULT 0"),
+    ("transactions", "split_note", "TEXT"),          # who it was with
+    ("transactions", "split_source", "TEXT"),        # manual | rule
+    ("transactions", "split_settled", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 _local = threading.local()
@@ -127,6 +146,32 @@ def _migrate(conn: sqlite3.Connection) -> None:
         have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in have:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
+def _relax_split_rule_check(conn: sqlite3.Connection) -> None:
+    """Rebuild split_rules if it still carries the original my_share > 0 check.
+
+    SQLite cannot alter a CHECK in place. The table is small and rows are copied
+    across, so this is safe to run on every start - it does nothing once done.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='split_rules'").fetchone()
+    if not row or "my_share > 0" not in row["sql"]:
+        return
+    conn.executescript("""
+        BEGIN;
+        CREATE TABLE split_rules_new (
+            merchant_key TEXT PRIMARY KEY,
+            my_share     REAL NOT NULL CHECK (my_share >= 0 AND my_share <= 1),
+            note         TEXT,
+            created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO split_rules_new SELECT merchant_key, my_share, note, created_at
+          FROM split_rules;
+        DROP TABLE split_rules;
+        ALTER TABLE split_rules_new RENAME TO split_rules;
+        COMMIT;
+    """)
 
 
 def connect() -> sqlite3.Connection:
@@ -154,4 +199,5 @@ def init() -> sqlite3.Connection:
         conn = _local.conn = connect()
         conn.executescript(SCHEMA)
         _migrate(conn)
+        _relax_split_rule_check(conn)
     return conn

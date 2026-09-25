@@ -65,7 +65,16 @@ def _shift(d: date, months: int) -> date:
 # Cashback you marked (Rakuten and the like) is subtracted the same way, as
 # `amount - cashback`: it pays out off-card - PayPal, Amex MR, Bilt - so it never
 # arrives as a credit to net against.
+#
+# split_owed is somebody else's share of a bill you fronted. It comes back as a
+# Zelle or Venmo credit that is classified as a transfer and therefore excluded,
+# so without subtracting it here the full charge would count as yours.
 SPEND = "is_transfer = 0 AND category != 'Income'"
+
+# What a transaction actually cost you. One definition, because it is used by
+# every tile, chart, budget and export - a ninth hand-written copy of
+# `amount - cashback` is how these drift apart.
+NET = "(amount - cashback - split_owed)"
 
 # Payout programs, and whether Rakuten pays them in points (1 point per cent).
 PAYOUTS = {"paypal": False, "amex_mr": True, "bilt": True}
@@ -119,14 +128,14 @@ def summary(months: int = Query(6, ge=1, le=60), account_id: str | None = None,
     bal, bal_p = _scope(account_id)
 
     totals = _rows(f"""
-        SELECT COALESCE(SUM(amount - cashback), 0) AS spend, COUNT(*) AS txns
+        SELECT COALESCE(SUM{NET}, 0) AS spend, COUNT(*) AS txns
         FROM transactions WHERE {SPEND} AND date BETWEEN ? AND ?{acct}
     """, (start, end) + acct_p)[0]
 
     today = date.today()
     this_month = today.replace(day=1)
     spend_between = f"""
-        SELECT COALESCE(SUM(amount - cashback), 0) AS spend
+        SELECT COALESCE(SUM{NET}, 0) AS spend
         FROM transactions WHERE {SPEND} AND date BETWEEN ? AND ?{acct}
     """
     # "this month" is the calendar month whatever range is picked - a custom
@@ -147,7 +156,7 @@ def summary(months: int = Query(6, ge=1, le=60), account_id: str | None = None,
 
     trend_start = _shift(this_month, -11)
     by_month = {r["month"]: r["spend"] for r in _rows(f"""
-        SELECT substr(date, 1, 7) AS month, SUM(amount - cashback) AS spend
+        SELECT substr(date, 1, 7) AS month, SUM{NET} AS spend
         FROM transactions WHERE {SPEND} AND date >= ?{acct} GROUP BY month
     """, (trend_start.isoformat(),) + acct_p)}
     trend_months = [_shift(trend_start, i).isoformat()[:7] for i in range(12)]
@@ -207,9 +216,9 @@ def spend_by_category(months: int = Query(6, ge=1, le=60),
     start, end = _window(months, start_date, end_date)
     acct, acct_p = _scope(account_id, None, q)
     return _rows(f"""
-        SELECT category, SUM(amount - cashback) AS amount, COUNT(*) AS txns
+        SELECT category, SUM{NET} AS amount, COUNT(*) AS txns
         FROM transactions WHERE {SPEND} AND date BETWEEN ? AND ?{acct}
-        GROUP BY category HAVING SUM(amount - cashback) > 0 ORDER BY amount DESC
+        GROUP BY category HAVING SUM{NET} > 0 ORDER BY amount DESC
     """, (start, end) + acct_p)
 
 
@@ -221,9 +230,9 @@ def spend_by_month(months: int = Query(6, ge=1, le=60),
     start, end = _window(months, start_date, end_date)
     acct, acct_p = _scope(account_id, category, q)
     return _rows(f"""
-        SELECT substr(date, 1, 7) AS month, category, SUM(amount - cashback) AS amount
+        SELECT substr(date, 1, 7) AS month, category, SUM{NET} AS amount
         FROM transactions WHERE {SPEND} AND date BETWEEN ? AND ?{acct}
-        GROUP BY month, category HAVING SUM(amount - cashback) > 0 ORDER BY month, amount DESC
+        GROUP BY month, category HAVING SUM{NET} > 0 ORDER BY month, amount DESC
     """, (start, end) + acct_p)
 
 
@@ -236,9 +245,9 @@ def top_merchants(months: int = Query(6, ge=1, le=60),
     start, end = _window(months, start_date, end_date)
     acct, acct_p = _scope(account_id, category, q)
     return _rows(f"""
-        SELECT merchant_key, category, SUM(amount - cashback) AS amount, COUNT(*) AS txns
+        SELECT merchant_key, category, SUM{NET} AS amount, COUNT(*) AS txns
         FROM transactions WHERE {SPEND} AND date BETWEEN ? AND ?{acct}
-        GROUP BY merchant_key HAVING SUM(amount - cashback) > 0 ORDER BY amount DESC LIMIT ?
+        GROUP BY merchant_key HAVING SUM{NET} > 0 ORDER BY amount DESC LIMIT ?
     """, (start, end) + acct_p + (limit,))
 
 
@@ -393,6 +402,132 @@ def clear_cashback(txn_id: str) -> dict:
     return {"txn_id": txn_id}
 
 
+@app.put("/api/transactions/{txn_id}/split")
+def set_split(txn_id: str, payload: dict = Body(...)) -> dict:
+    """Record somebody else's share of a bill you fronted.
+
+    Two ways to say it: `share` is the fraction you keep (0.5 = half), `owed` is
+    a flat dollar amount they owe you. `apply_to_merchant` stores it as a rule so
+    every future charge from that merchant splits itself - which is the point for
+    rent and shared utilities.
+    """
+    row = conn().execute(
+        "SELECT amount, merchant_key FROM transactions WHERE txn_id = ?", (txn_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "no such transaction")
+    if row["amount"] <= 0:
+        raise HTTPException(400, "a split applies to a charge, not a credit")
+
+    if (share := payload.get("share")) is not None:
+        # 0 is allowed and means none of it was yours - you fronted the whole
+        # thing for someone else, so none of it is your spend.
+        if not 0 <= float(share) <= 1:
+            raise HTTPException(400, "share is the fraction you keep, between 0 and 1")
+        owed = round(row["amount"] * (1 - float(share)), 2)
+    elif (flat := payload.get("owed")) is not None:
+        owed = round(float(flat), 2)
+        share = None
+    else:
+        raise HTTPException(400, "give either share (fraction you keep) or owed (dollars)")
+
+    if not 0 <= owed <= row["amount"]:
+        raise HTTPException(400, f"owed must be between $0 and the ${row['amount']:.2f} charged")
+
+    note = (payload.get("note") or "").strip() or None
+    c = conn()
+    c.execute("BEGIN")
+    try:
+        c.execute(
+            "UPDATE transactions SET split_owed = ?, split_note = ?, split_source = 'manual'"
+            " WHERE txn_id = ?", (owed, note, txn_id))
+        if payload.get("apply_to_merchant"):
+            if share is None:
+                raise HTTPException(400, "a merchant rule needs a share, not a flat amount")
+            c.execute(
+                "INSERT INTO split_rules (merchant_key, my_share, note) VALUES (?, ?, ?)"
+                " ON CONFLICT(merchant_key) DO UPDATE SET my_share=excluded.my_share,"
+                " note=excluded.note", (row["merchant_key"], float(share), note))
+            # Backfill the merchant's other transactions, settled ones aside.
+            # Credits are included deliberately and keep their sign: a refund on
+            # a bill you split is half theirs too, so amount * (1 - share) gives
+            # a negative split_owed and the netting stays symmetric. Excluding
+            # them hands you the whole refund and under-counts your spend.
+            c.execute(
+                "UPDATE transactions SET split_owed = ROUND(amount * ?, 2),"
+                " split_note = ?, split_source = 'rule'"
+                " WHERE merchant_key = ? AND split_settled = 0 AND txn_id != ?"
+                "   AND COALESCE(split_source, '') != 'manual'",
+                (1 - float(share), note, row["merchant_key"], txn_id))
+        c.execute("COMMIT")
+    except Exception:
+        c.execute("ROLLBACK")
+        raise
+
+    applied = conn().execute(
+        "SELECT COUNT(*) n FROM transactions WHERE merchant_key = ? AND split_owed > 0",
+        (row["merchant_key"],)).fetchone()["n"]
+    return {"txn_id": txn_id, "split_owed": owed,
+            "net": round(row["amount"] - owed, 2),
+            "merchant_key": row["merchant_key"], "transactions_split": applied}
+
+
+@app.delete("/api/transactions/{txn_id}/split")
+def clear_split(txn_id: str, drop_rule: bool = False) -> dict:
+    c = conn()
+    row = c.execute("SELECT merchant_key FROM transactions WHERE txn_id = ?", (txn_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "no such transaction")
+    c.execute(
+        "UPDATE transactions SET split_owed = 0, split_note = NULL, split_source = NULL"
+        " WHERE txn_id = ?", (txn_id,))
+    if drop_rule:
+        c.execute("DELETE FROM split_rules WHERE merchant_key = ?", (row["merchant_key"],))
+    return {"txn_id": txn_id, "rule_removed": bool(drop_rule)}
+
+
+@app.get("/api/split/owed")
+def split_owed(months: int = Query(12, ge=1, le=60),
+               start_date: Start = None, end_date: End = None) -> dict:
+    """What you have fronted and not yet marked settled, and the P2P credits
+    sitting there to settle it against."""
+    start, end = _window(months, start_date, end_date)
+    rows = _rows("""
+        SELECT t.txn_id, t.date, COALESCE(t.merchant_name, t.merchant_key) AS merchant,
+               t.amount, t.split_owed, t.split_note, t.split_source, t.category
+        FROM transactions t
+        WHERE t.split_owed > 0 AND t.split_settled = 0 AND t.date BETWEEN ? AND ?
+        ORDER BY t.date DESC
+    """, (start, end))
+    # P2P_WHERE is written against a `t` alias, so the table has to carry one
+    credits = _rows(f"""
+        SELECT COALESCE(-SUM(t.amount), 0) AS received, COUNT(*) AS n
+        FROM transactions t WHERE {P2P_WHERE} AND t.amount < 0 AND t.date BETWEEN ? AND ?
+    """, (start, end))[0]
+    return {"outstanding": round(sum(r["split_owed"] for r in rows), 2),
+            "rows": rows,
+            "p2p_received": credits["received"], "p2p_count": credits["n"]}
+
+
+@app.post("/api/transactions/{txn_id}/split/settled")
+def mark_settled(txn_id: str, payload: dict = Body(default={})) -> dict:
+    """They paid you back. The split stays - it is still not your spend - but it
+    stops showing as outstanding."""
+    settled = int(payload.get("settled", True))
+    conn().execute("UPDATE transactions SET split_settled = ? WHERE txn_id = ?", (settled, txn_id))
+    return {"txn_id": txn_id, "settled": bool(settled)}
+
+
+@app.get("/api/split/rules")
+def split_rules() -> list[dict]:
+    return _rows("""
+        SELECT r.merchant_key, r.my_share, r.note,
+               (SELECT COUNT(*) FROM transactions t
+                 WHERE t.merchant_key = r.merchant_key AND t.split_owed > 0) AS applies_to
+        FROM split_rules r ORDER BY r.merchant_key
+    """)
+
+
 @app.get("/api/cashback/pending")
 def cashback_pending() -> dict:
     """Cashback marked but not yet paid out, oldest first - Rakuten pays
@@ -460,7 +595,7 @@ def budgets() -> dict:
     rows = _rows(f"""
         SELECT b.category, b.monthly, COALESCE(s.spent, 0) AS spent
         FROM budgets b LEFT JOIN (
-            SELECT category, SUM(amount - cashback) AS spent FROM transactions
+            SELECT category, SUM{NET} AS spent FROM transactions
             WHERE {SPEND} AND date >= ? GROUP BY category
         ) s USING (category)
         ORDER BY b.monthly DESC
