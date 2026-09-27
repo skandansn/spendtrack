@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Window-state changes only, for the shopping packages we know about. Content
+  events from a scrolling shop feed arrive constantly and tell us nothing, so
+  subscribing to them would drain the battery for no benefit.
+
+  canRetrieveWindowContent is false on purpose: SpendWatch never reads the
+  screen, it only needs to know which app came to the front.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canRetrieveWindowContent="false"
+    android:notificationTimeout="100"
+    android:description="@string/service_description" />

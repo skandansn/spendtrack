@@ -1,0 +1,19 @@
+name = "spendtrack-snapshot"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Be explicit rather than inheriting defaults. The workers.dev URL is what the
+# phone talks to; per-version preview URLs would be extra public endpoints
+# sharing the same secrets, for no benefit here.
+workers_dev = true
+preview_urls = false
+
+# Created with:  wrangler kv namespace create SNAPSHOT
+# Paste the id it prints below.
+[[kv_namespaces]]
+binding = "SNAPSHOT"
+id = "da610832232c4d7fb2ee30d30a521d71"
+
+# READ_TOKEN and WRITE_TOKEN are secrets, never committed:
+#   wrangler secret put WRITE_TOKEN
+#   wrangler secret put READ_TOKEN

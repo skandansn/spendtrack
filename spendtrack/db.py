@@ -103,6 +103,13 @@ CREATE TABLE IF NOT EXISTS split_rules (
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Small key/value store: password hash, session signing key, lockout counter.
+-- Kept in the database so a backup restores a working login with it.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id     TEXT,

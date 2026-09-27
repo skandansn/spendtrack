@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<title>spendtrack</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  body { display: grid; place-items: center; min-height: 100dvh; }
+  .box { width: min(360px, 92vw); text-align: center; }
+  .box h1 { justify-content: center; margin-bottom: 6px; }
+  .box p.note { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+  .box input {
+    width: 100%; font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 999px; padding: 11px 16px; margin-bottom: 10px;
+  }
+  .box button { width: 100%; padding: 11px; font-weight: 600; }
+  .box .err { min-height: 1.4em; margin-top: 12px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <form class="box card" id="form">
+    <h1><span class="brand-mark" aria-hidden="true"></span>spendtrack</h1>
+    <p class="note">Sign in to see your accounts.</p>
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password"
+           autofocus required>
+    <button type="submit" class="primary" id="go">Sign in</button>
+    <div class="err" id="error"></div>
+  </form>
+
+<script>
+const form = document.getElementById("form");
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const button = document.getElementById("go");
+  const error = document.getElementById("error");
+  button.disabled = true;
+  error.textContent = "";
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: document.getElementById("password").value }),
+    });
+    if (res.ok) {
+      // replace, not assign: the login page should not sit in history behind
+      // the dashboard where Back would land on it while signed in
+      location.replace("/");
+      return;
+    }
+    const body = await res.json().catch(() => ({}));
+    error.textContent = body.detail || `Failed (${res.status})`;
+  } catch {
+    error.textContent = "Could not reach the server.";
+  } finally {
+    button.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

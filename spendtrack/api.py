@@ -3,22 +3,92 @@ because nothing here is reachable off the machine."""
 
 import base64
 import calendar
+import os
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from statistics import median
 from typing import Annotated
 
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import db
+from . import auth, db
 from .categorize import Categorizer, Rules
 
 WEB = Path(__file__).with_name("web")
 
 app = FastAPI(title="spendtrack", docs_url=None, redoc_url=None)
+
+COOKIE = "spendtrack_session"
+
+# Reachable without a session. Everything else needs one once a password is set.
+# The shell is here because a login page that cannot load its own stylesheet is
+# not a login page; none of these carry data.
+PUBLIC = {"/login", "/api/login", "/sw.js", "/static/style.css", "/static/app.js",
+          "/static/manifest.json", "/static/icon-192.png", "/static/icon-512.png",
+          "/static/icon-maskable.png"}
+
+
+@app.middleware("http")
+async def require_session(request, call_next):
+    """The whole security boundary for a public deployment.
+
+    Fails closed: anything not explicitly public needs a valid session. While no
+    password is set the app is open, which is correct for the original
+    localhost/tailnet setup and is why `spendtrack passwd` is the first step of
+    exposing it anywhere.
+    """
+    path = request.url.path
+    if path in PUBLIC or not auth.has_password(db.init()):
+        return await call_next(request)
+    if auth.valid(db.init(), request.cookies.get(COOKIE)):
+        return await call_next(request)
+    if path.startswith("/api/"):
+        return Response('{"detail":"not signed in"}', status_code=401,
+                        media_type="application/json")
+    return RedirectResponse("/login", status_code=303)
+
+
+@app.post("/api/login")
+def login(payload: dict = Body(...)) -> Response:
+    conn = db.init()
+    if (wait := auth.locked_for(conn)) > 0:
+        raise HTTPException(429, f"too many attempts - try again in {wait // 60 + 1} min")
+    if not auth.check_password(conn, str(payload.get("password", ""))):
+        auth.record_failure(conn)
+        raise HTTPException(401, "wrong password")
+    auth.clear_failures(conn)
+
+    response = Response('{"ok":true}', media_type="application/json")
+    response.set_cookie(
+        COOKIE, auth.issue(conn),
+        max_age=auth.SESSION_DAYS * 86400,
+        httponly=True,          # unreadable from JavaScript, so XSS cannot steal it
+        samesite="lax",         # not sent on cross-site POSTs
+        secure=os.environ.get("SPENDTRACK_HTTPS", "1") != "0",
+        path="/",
+    )
+    return response
+
+
+@app.post("/api/logout")
+def logout() -> Response:
+    response = Response('{"ok":true}', media_type="application/json")
+    response.delete_cookie(COOKIE, path="/")
+    return response
+
+
+@app.get("/api/session")
+def session_state() -> dict:
+    conn = db.init()
+    return {"password_set": auth.has_password(conn)}
+
+
+@app.get("/login")
+def login_page() -> FileResponse:
+    return FileResponse(WEB / "login.html")
 
 
 def conn() -> sqlite3.Connection:
@@ -602,6 +672,50 @@ def budgets() -> dict:
     """, (today.replace(day=1).isoformat(),))
     days = calendar.monthrange(today.year, today.month)[1]
     return {"month_progress": today.day / days, "rows": rows}
+
+
+@app.get("/api/snapshot")
+def snapshot() -> dict:
+    """Everything the phone needs to warn you before you buy, in about a kilobyte.
+
+    Deliberately an aggregate: month-to-date per category, budgets, and how far
+    through the month you are. No transactions, no merchants, no account numbers
+    and no Plaid tokens - so this can be published somewhere cheap and public-ish
+    without exposing anything that matters.
+    """
+    today = date.today()
+    first = today.replace(day=1)
+    days = calendar.monthrange(today.year, today.month)[1]
+
+    rows = _rows(f"""
+        SELECT c.category,
+               COALESCE(m.spent, 0)   AS spent,
+               COALESCE(p.spent, 0)   AS last_month,
+               b.monthly              AS budget
+        FROM (SELECT DISTINCT category FROM transactions WHERE category IS NOT NULL) c
+        LEFT JOIN (SELECT category, SUM{NET} AS spent FROM transactions
+                    WHERE {SPEND} AND date >= ? GROUP BY category) m USING (category)
+        LEFT JOIN (SELECT category, SUM{NET} AS spent FROM transactions
+                    WHERE {SPEND} AND date BETWEEN ? AND ? GROUP BY category) p USING (category)
+        LEFT JOIN budgets b USING (category)
+        ORDER BY spent DESC
+    """, (first.isoformat(),
+          _shift(first, -1).isoformat(), (first - timedelta(days=1)).isoformat()))
+
+    return {
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "month": first.isoformat()[:7],
+        "day_of_month": today.day,
+        "days_in_month": days,
+        "total": round(sum(r["spent"] for r in rows), 2),
+        "categories": [
+            {"category": r["category"],
+             "spent": round(r["spent"], 2),
+             "last_month": round(r["last_month"], 2),
+             "budget": r["budget"]}
+            for r in rows if r["spent"] or r["budget"] or r["last_month"]
+        ],
+    }
 
 
 @app.put("/api/budgets/{category}")

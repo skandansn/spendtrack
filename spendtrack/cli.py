@@ -6,9 +6,12 @@
     spendtrack status   what is linked, and when it last synced
     spendtrack unlink   remove an institution from Plaid and from the database
     spendtrack reauth   re-authenticate an institution WITHOUT using a new Item
+    spendtrack publish  push the spend snapshot to the phone's endpoint
+    spendtrack passwd   set the dashboard password (required before exposing it)
 """
 
 import argparse
+import os
 import sys
 import webbrowser
 from pathlib import Path
@@ -44,7 +47,84 @@ def cmd_sync(args) -> int:
         "SELECT COUNT(*) n FROM transactions WHERE category_source = 'uncategorized'"
     ).fetchone()["n"]
     print(f"{total} transactions stored" + (f", {pending} uncategorised" if pending else ""))
+    if getattr(args, "publish", False):
+        cmd_publish(args)
     return 1 if failed else 0
+
+
+def cmd_publish(args) -> int:
+    """Push the aggregate snapshot to the Cloudflare Worker the phone reads.
+
+    Run after a sync. Only category totals go out - see /api/snapshot - so this
+    is safe to send to a public endpoint. Failure is not fatal: the phone keeps
+    showing the last snapshot it got rather than nothing.
+    """
+    import json as jsonlib
+    import urllib.error
+    import urllib.request
+
+    from .api import snapshot
+
+    url = args.url or os.environ.get("SNAPSHOT_URL")
+    token = os.environ.get("SNAPSHOT_WRITE_TOKEN")
+    if not url or not token:
+        print("Set SNAPSHOT_URL and SNAPSHOT_WRITE_TOKEN in .env (see .env.example).")
+        return 2
+
+    db.init()
+    body = jsonlib.dumps(snapshot()).encode()
+    request = urllib.request.Request(
+        url, data=body, method="PUT",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            # Cloudflare answers urllib's default agent with a 403 (error 1010,
+            # "browser signature banned"), so say who we actually are.
+            "User-Agent": "spendtrack/1.0",
+        })
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            result = jsonlib.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        print(f"Publish failed: {exc.code} {exc.read().decode()[:200]}")
+        return 1
+    except urllib.error.URLError as exc:
+        print(f"Publish failed: {exc.reason}")
+        return 1
+    print(f"Published {result.get('bytes')} bytes, "
+          f"{result.get('categories')} categories.")
+    return 0
+
+
+def cmd_passwd(args) -> int:
+    """Set the dashboard password.
+
+    Until one is set the dashboard is open to anyone who can reach it, which is
+    fine on localhost and fatal on a public address. Deployment should run this
+    before the port is ever reachable.
+    """
+    import getpass
+
+    from . import auth
+
+    conn = db.init()
+    if auth.has_password(conn) and not args.force:
+        current = getpass.getpass("Current password: ")
+        if not auth.check_password(conn, current):
+            print("Wrong password.")
+            return 1
+
+    first = getpass.getpass("New password (10+ characters): ")
+    if first != getpass.getpass("Again: "):
+        print("They do not match.")
+        return 1
+    try:
+        auth.set_password(conn, first)
+    except ValueError as exc:
+        print(exc)
+        return 1
+    print("Password set. Every existing session is now signed out.")
+    return 0
 
 
 def cmd_status(args) -> int:
@@ -355,6 +435,8 @@ def main(argv: list[str] | None = None) -> int:
     p_sync.add_argument("--full", action="store_true",
                         help="replay the whole history instead of only what changed")
     p_sync.add_argument("--log", help="append output here (for scheduled runs)")
+    p_sync.add_argument("--publish", action="store_true",
+                        help="push the snapshot to the phone afterwards")
     p_sync.set_defaults(func=cmd_sync)
 
     p_serve = sub.add_parser("serve", help="run the dashboard")
@@ -368,6 +450,16 @@ def main(argv: list[str] | None = None) -> int:
                          help="seconds to wait for the tailnet address to appear")
     p_serve.add_argument("--log", help="append output here (for scheduled runs)")
     p_serve.set_defaults(func=cmd_serve)
+
+    p_publish = sub.add_parser("publish", help="push the spend snapshot to the phone's endpoint")
+    p_publish.add_argument("--url", help="overrides SNAPSHOT_URL")
+    p_publish.add_argument("--log", help="append output here (for scheduled runs)")
+    p_publish.set_defaults(func=cmd_publish)
+
+    p_passwd = sub.add_parser("passwd", help="set the dashboard password")
+    p_passwd.add_argument("--force", action="store_true",
+                          help="skip the current-password prompt (recovery on the host)")
+    p_passwd.set_defaults(func=cmd_passwd)
 
     p_status = sub.add_parser("status", help="show linked institutions and balances")
     p_status.set_defaults(func=cmd_status)
