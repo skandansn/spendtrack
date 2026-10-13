@@ -15,10 +15,11 @@ import android.widget.TextView
  * that app's categories this month. One row per category, because an app like
  * Uber spends out of two different budgets.
  *
- * Deliberately not a blocker: it does not cover the screen, does not take focus
- * and passes every touch through. This is a reminder, not a lock - the moment it
- * gets in the way of actually buying something it will be switched off, and then
- * it warns you about nothing.
+ * Deliberately not a blocker: it does not cover the screen and does not take
+ * focus. It is touchable only within its own bounds, so a tap dismisses it and
+ * every touch outside it still reaches the app underneath. This is a reminder,
+ * not a lock - the moment it gets in the way of actually buying something it
+ * will be switched off, and then it warns you about nothing.
  */
 class Cover(private val service: AccessibilityService) {
 
@@ -27,11 +28,17 @@ class Cover(private val service: AccessibilityService) {
 
     private val windows = service.getSystemService(WindowManager::class.java)
     private var view: View? = null
+    private var onDismiss: (() -> Unit)? = null
     private val hide = Runnable { dismiss() }
 
-    fun show(title: String, rows: List<Row>, dwellSeconds: Int) {
+    /**
+     * [onDismiss] fires however the card goes away - tapped or timed out - so
+     * the caller can move the same figures to the notification shade.
+     */
+    fun show(title: String, rows: List<Row>, dwellSeconds: Int, onDismiss: () -> Unit) {
         dismiss()
         if (rows.isEmpty()) return
+        this.onDismiss = onDismiss
         val density = service.resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
         val anyWarning = rows.any { it.warn }
@@ -47,10 +54,11 @@ class Cover(private val service: AccessibilityService) {
             elevation = dp(8).toFloat()
 
             addView(TextView(service).apply {
-                text = title
+                text = "$title   -   tap to dismiss"
                 textSize = 12f
                 setTextColor(Color.parseColor("#898781"))
             })
+            setOnClickListener { dismiss() }
 
             rows.forEachIndexed { index, row ->
                 addView(LinearLayout(service).apply {
@@ -80,10 +88,11 @@ class Cover(private val service: AccessibilityService) {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            // Not touchable and not focusable: taps go to the app underneath, so
-            // the card can never stop you completing a purchase.
+            // Touchable so a tap can dismiss it, but WRAP_CONTENT means the
+            // window is only as big as the card - anything outside those bounds
+            // still goes straight to the app, so a purchase can never be blocked.
+            // Not focusable, so it never steals the keyboard or the back gesture.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
@@ -96,10 +105,14 @@ class Cover(private val service: AccessibilityService) {
     }
 
     fun dismiss() {
-        view?.let { existing ->
-            existing.removeCallbacks(hide)
-            runCatching { windows.removeView(existing) }
-        }
+        val existing = view ?: return
+        existing.removeCallbacks(hide)
+        runCatching { windows.removeView(existing) }
         view = null
+        // taken before invoking, so a callback that shows something else cannot
+        // re-enter this and fire twice
+        val callback = onDismiss
+        onDismiss = null
+        callback?.invoke()
     }
 }

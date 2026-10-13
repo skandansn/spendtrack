@@ -116,6 +116,14 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         showStatus()
+        // Android 13+ drops notifications silently without this, and the quiet
+        // reminder after the card is dismissed is the half you would not notice
+        // was missing.
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
     }
 
     private fun showStatus() {

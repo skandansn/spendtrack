@@ -2,6 +2,8 @@ package com.godsk.spendwatch
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -10,6 +12,9 @@ import kotlin.math.roundToInt
 /**
  * Watches for a shopping app coming to the front and shows what its categories
  * have already cost this month.
+ *
+ * Shown once as a card you can tap away; after that, and on every reopen inside
+ * the quiet window, the same figures go silently to the notification shade.
  *
  * Only TYPE_WINDOW_STATE_CHANGED, and only for the packages in [Catalog]. Both
  * limits are about battery: content events from a scrolling shopping feed arrive
@@ -21,6 +26,19 @@ class WatchService : AccessibilityService() {
     private lateinit var cover: Cover
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var snapshot: Snapshot? = null
+    @Volatile private var loadedAt = 0L
+    @Volatile private var fetching = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    // Keep the copy fresh in the background as well, so the first shopping app
+    // opened after a quiet few days shows today's figures, not those of the
+    // last visit. Off while the phone dozes; catches up when it wakes.
+    private val tick = object : Runnable {
+        override fun run() {
+            refreshIfStale()
+            handler.postDelayed(this, FRESH_MS)
+        }
+    }
 
     override fun onServiceConnected() {
         prefs = Prefs(this)
@@ -32,19 +50,28 @@ class WatchService : AccessibilityService() {
             packageNames = Catalog.packages
             notificationTimeout = 100
         }
-        snapshot = Snapshot.cached(this)
-        refreshIfStale()
+        Notifier.ensureChannel(this)
+        handler.post(tick)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString() ?: return
         val entry = Catalog.entryFor(packageName) ?: return
-        if (!prefs.shouldShow(packageName)) return
 
         refreshIfStale()
         val snap = snapshot
         val rows = entry.categories.map { category -> row(category, snap) }
-        cover.show(title = entry.label, rows = rows, dwellSeconds = prefs.dwellSeconds)
+
+        if (prefs.shouldShowCard(packageName)) {
+            prefs.markCardShown(packageName)
+            // However it goes away - tapped or timed out - the figures move to
+            // the shade, so dismissing never means losing them.
+            cover.show(entry.label, rows, prefs.dwellSeconds) {
+                Notifier.show(this, entry.label, rows)
+            }
+        } else {
+            Notifier.show(this, entry.label, rows)
+        }
     }
 
     private fun row(category: String, snap: Snapshot?): Cover.Row {
@@ -92,15 +119,31 @@ class WatchService : AccessibilityService() {
     private fun pace(budget: Double, snap: Snapshot) = budget * snap.monthProgress
 
     /**
-     * Refresh at most once an hour, off the event thread. Never blocks the
+     * Refresh at most once every [FRESH_MS], off the event thread. Never blocks the
      * overlay: whatever is cached is what gets drawn right now, and a newer
      * snapshot lands in time for the next app you open.
      */
     private fun refreshIfStale() {
+        val savedAt = Snapshot.cachedAt(this)
+        // The settings screen fetches too, straight to disk. Without this the
+        // service would keep drawing the copy it loaded at startup, because the
+        // file being fresh is exactly what stops it fetching for itself.
+        if (savedAt > loadedAt) load()
         if (!prefs.configured) return
-        val age = System.currentTimeMillis() - Snapshot.cachedAt(this)
-        if (age < 60 * 60 * 1000L) return
-        io.execute { Snapshot.refresh(this)?.let { snapshot = it } }
+        if (fetching || System.currentTimeMillis() - savedAt < FRESH_MS) return
+        fetching = true
+        io.execute {
+            try {
+                if (Snapshot.refresh(this) != null) load()
+            } finally {
+                fetching = false
+            }
+        }
+    }
+
+    private fun load() {
+        loadedAt = Snapshot.cachedAt(this)
+        snapshot = Snapshot.cached(this)
     }
 
     private fun money(value: Double): String =
@@ -109,8 +152,13 @@ class WatchService : AccessibilityService() {
     override fun onInterrupt() = cover.dismiss()
 
     override fun onDestroy() {
+        handler.removeCallbacks(tick)
         cover.dismiss()
         io.shutdownNow()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val FRESH_MS = 30 * 60 * 1000L
     }
 }
