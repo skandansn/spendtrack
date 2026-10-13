@@ -52,29 +52,27 @@ def cmd_sync(args) -> int:
     return 1 if failed else 0
 
 
-def cmd_publish(args) -> int:
-    """Push the aggregate snapshot to the Cloudflare Worker the phone reads.
+def publish_snapshot(payload: dict, url: str | None = None) -> str | None:
+    """PUT the aggregate snapshot to the endpoint the phone reads.
 
-    Run after a sync. Only category totals go out - see /api/snapshot - so this
-    is safe to send to a public endpoint. Failure is not fatal: the phone keeps
-    showing the last snapshot it got rather than nothing.
+    Returns None on success, or a human-readable reason. Callers treat failure
+    as non-fatal: the phone keeps showing the last snapshot it got, which is far
+    better than nothing at a checkout screen.
+
+    Takes the payload rather than building it, so the dashboard can publish the
+    snapshot it just computed without this module importing the API.
     """
     import json as jsonlib
     import urllib.error
     import urllib.request
 
-    from .api import snapshot
-
-    url = args.url or os.environ.get("SNAPSHOT_URL")
+    url = url or os.environ.get("SNAPSHOT_URL")
     token = os.environ.get("SNAPSHOT_WRITE_TOKEN")
     if not url or not token:
-        print("Set SNAPSHOT_URL and SNAPSHOT_WRITE_TOKEN in .env (see .env.example).")
-        return 2
+        return "SNAPSHOT_URL and SNAPSHOT_WRITE_TOKEN are not set"
 
-    db.init()
-    body = jsonlib.dumps(snapshot()).encode()
     request = urllib.request.Request(
-        url, data=body, method="PUT",
+        url, data=jsonlib.dumps(payload).encode(), method="PUT",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -86,13 +84,71 @@ def cmd_publish(args) -> int:
         with urllib.request.urlopen(request, timeout=20) as response:
             result = jsonlib.loads(response.read())
     except urllib.error.HTTPError as exc:
-        print(f"Publish failed: {exc.code} {exc.read().decode()[:200]}")
-        return 1
+        return f"{exc.code} {exc.read().decode()[:160]}"
     except urllib.error.URLError as exc:
-        print(f"Publish failed: {exc.reason}")
+        return str(exc.reason)
+    except OSError as exc:
+        return str(exc)
+    return None if result.get("ok") else str(result)[:160]
+
+
+def cmd_publish(args) -> int:
+    from .api import snapshot
+
+    db.init()
+    problem = publish_snapshot(snapshot(), getattr(args, "url", None))
+    if problem:
+        print(f"Publish failed: {problem}")
         return 1
-    print(f"Published {result.get('bytes')} bytes, "
-          f"{result.get('categories')} categories.")
+    print("Published the snapshot.")
+    return 0
+
+
+def cmd_export(args) -> int:
+    """Write everything the cloud needs to pick up where this machine left off.
+
+    Includes the Plaid access tokens and their cursors, so the cloud continues
+    each institution's sync from exactly here: no refetch, and - the point - no
+    re-linking, which would permanently spend Plaid Items.
+
+    A file rather than an HTTP endpoint on purpose. A local endpoint serving
+    access tokens is one any web page you visit could try to reach; a file you
+    pick yourself in the import screen is not. Delete it once imported.
+    """
+    import json as jsonlib
+
+    conn = db.init()
+
+    def rows(sql: str) -> list[dict]:
+        return [dict(r) for r in conn.execute(sql)]
+
+    payload = {
+        "version": 1,
+        "items": rows("SELECT item_id, access_token, institution_id, institution_name,"
+                      " cursor, status, institution_logo, institution_color FROM items"),
+        "accounts": rows("""SELECT a.*, c.last_statement_balance, c.last_statement_date,
+                                   c.next_payment_due_date, c.minimum_payment,
+                                   c.apr_percentage, c.is_overdue
+                            FROM accounts a LEFT JOIN card_details c USING (account_id)"""),
+        "transactions": rows("""SELECT txn_id, account_id, date, name, merchant_name,
+                                       merchant_key, amount, iso_currency, pending,
+                                       plaid_category, category, category_source,
+                                       is_transfer, logo_url, cashback, cashback_pct,
+                                       cashback_payout, cashback_source, cashback_received,
+                                       split_owed, split_note, split_source, split_settled
+                                FROM transactions"""),
+        "overrides": rows("SELECT merchant_key, category FROM category_overrides"),
+        "merchantCache": rows("SELECT merchant_key, category, model FROM merchant_category_cache"),
+        "budgets": rows("SELECT category, monthly FROM budgets"),
+        "splitRules": rows("SELECT merchant_key, my_share, note FROM split_rules"),
+    }
+
+    out = Path(args.out)
+    out.write_text(jsonlib.dumps(payload), encoding="utf-8")
+    kb = out.stat().st_size / 1024
+    print(f"Wrote {out} ({kb:,.0f} KB): {len(payload['items'])} institutions, "
+          f"{len(payload['accounts'])} accounts, {len(payload['transactions'])} transactions.")
+    print("It contains your Plaid access tokens - delete it once imported.")
     return 0
 
 
@@ -455,6 +511,10 @@ def main(argv: list[str] | None = None) -> int:
     p_publish.add_argument("--url", help="overrides SNAPSHOT_URL")
     p_publish.add_argument("--log", help="append output here (for scheduled runs)")
     p_publish.set_defaults(func=cmd_publish)
+
+    p_export = sub.add_parser("export", help="write everything for the cloud import")
+    p_export.add_argument("--out", default="spendtrack-export.json")
+    p_export.set_defaults(func=cmd_export)
 
     p_passwd = sub.add_parser("passwd", help="set the dashboard password")
     p_passwd.add_argument("--force", action="store_true",

@@ -4,3 +4,10 @@
 *.db-shm
 __pycache__/
 .venv/
+
+# holds Plaid access tokens - must never be committed
+spendtrack-export*.json
+
+# local tool settings and emulator logs
+.claude/
+*-debug.log

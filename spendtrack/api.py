@@ -832,8 +832,17 @@ def recategorize(use_llm: bool = True) -> dict:
 
 @app.post("/api/sync")
 def sync(use_llm: bool = True) -> dict:
-    from . import plaid_sync
-    return {"results": plaid_sync.sync_all(conn(), plaid_sync.client(), use_llm=use_llm)}
+    """Pull from Plaid, then push the phone's snapshot.
+
+    Publishing is not optional here. Without it, pressing Sync now refreshes the
+    dashboard while the phone keeps showing older figures, with nothing on
+    either screen to say they disagree.
+    """
+    from . import cli, plaid_sync
+
+    results = plaid_sync.sync_all(conn(), plaid_sync.client(), use_llm=use_llm)
+    published = cli.publish_snapshot(snapshot())
+    return {"results": results, "published": published}
 
 
 # --- Plaid Link handshake ----------------------------------------------------
