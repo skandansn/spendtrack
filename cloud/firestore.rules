@@ -1,0 +1,25 @@
+rules_version = '2';
+
+// Single-user app: everything lives under users/{uid} and only that signed-in
+// user may touch it.
+//
+// The one carve-out that matters is `private`. It holds Plaid access tokens,
+// which can read every linked bank account - so no client may read it at all,
+// ever. Cloud Functions use the Admin SDK, which bypasses these rules, and that
+// is the only thing allowed near them.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid}/private/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
