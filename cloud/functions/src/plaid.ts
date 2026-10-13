@@ -221,7 +221,10 @@ export const createLinkToken = (
   // Custom Tab, so no native SDK is needed - and a Custom Tab, unlike a
   // webview, is where OAuth banks such as Chase can complete their sign-in.
   ...(hostedRedirect
-    ? { hosted_link: { is_mobile_app: true, completion_redirect_uri: hostedRedirect } }
+    // Not is_mobile_app: that mode also demands a registered HTTPS redirect_uri
+    // for OAuth banks. A Custom Tab is a real browser, so OAuth completes inside
+    // it and only the final hop back to the app needs a URI.
+    ? { hosted_link: { completion_redirect_uri: hostedRedirect } }
     : {}),
   ...(accessToken
     // update mode: re-authenticate an existing Item in place, consuming no slot

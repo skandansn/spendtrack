@@ -53,15 +53,20 @@ const SNAPSHOT_WRITE_TOKEN = defineSecret("SNAPSHOT_WRITE_TOKEN");
 const SECRETS = [PLAID_CLIENT_ID, PLAID_SECRET];
 // 512MiB and 120s: a first sync of two years of history is the slow case, and a
 // timeout halfway through would leave the cursor unadvanced and replay it.
+// Callables must be publicly invokable at the Cloud Run layer: the Firebase ID
+// token they carry is not a Google identity token, so a private service rejects
+// it with a 401 before any code runs. Sign-in is still enforced, by requireUid.
+// Stated explicitly because a deploy can otherwise leave a function private.
+const PUBLIC = { invoker: "public" as const };
 const HEAVY = { secrets: SECRETS, memory: "512MiB" as const, timeoutSeconds: 120 };
 
-export const sync = onCall(HEAVY, async (request) => {
+export const sync = onCall({ ...PUBLIC, ...HEAVY }, async (request) => {
   const uid = requireUid(request);
   const results = await syncAll(db, uid, plaidConfig());
   return { results };
 });
 
-export const linkToken = onCall({ secrets: SECRETS }, async (request) => {
+export const linkToken = onCall({ ...PUBLIC, secrets: SECRETS }, async (request) => {
   const uid = requireUid(request);
   const itemId = request.data?.itemId as string | undefined;
 
@@ -79,7 +84,7 @@ export const linkToken = onCall({ secrets: SECRETS }, async (request) => {
   return { linkToken: link_token, hostedLinkUrl: hosted_link_url ?? null };
 });
 
-export const exchangeToken = onCall({ secrets: SECRETS }, async (request) => {
+export const exchangeToken = onCall({ ...PUBLIC, secrets: SECRETS }, async (request) => {
   const uid = requireUid(request);
   const publicToken = request.data?.publicToken as string | undefined;
   if (!publicToken) throw new HttpsError("invalid-argument", "publicToken is required.");
@@ -90,7 +95,7 @@ export const exchangeToken = onCall({ secrets: SECRETS }, async (request) => {
  * Collect what a Hosted Link session produced and store it. Called by the phone
  * once the Custom Tab closes; Plaid keeps the result for six hours.
  */
-export const completeHostedLink = onCall({ secrets: SECRETS }, async (request) => {
+export const completeHostedLink = onCall({ ...PUBLIC, secrets: SECRETS }, async (request) => {
   const uid = requireUid(request);
   const linkToken = request.data?.linkToken as string | undefined;
   if (!linkToken) throw new HttpsError("invalid-argument", "linkToken is required.");
@@ -152,10 +157,14 @@ async function storeItem(uid: string, config: PlaidConfig, publicToken: string) 
 export const scheduledSync = onSchedule(
   { schedule: "30 7 * * *", timeZone: "America/New_York", ...HEAVY },
   async () => {
+    // The full recount reads every transaction, so it runs weekly; daily syncs
+    // keep the totals current through deltas in between.
+    const sunday = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" })
+      .format(new Date()) === "Sun";
     const users = await db.collection("users").listDocuments();
     for (const user of users) {
       try {
-        const results = await syncAll(db, user.id, plaidConfig(), true);
+        const results = await syncAll(db, user.id, plaidConfig(), sunday);
         logger.info("scheduled sync", { uid: user.id, results });
       } catch (error) {
         logger.error("scheduled sync failed", { uid: user.id, error: String(error) });
@@ -170,7 +179,7 @@ export const scheduledSync = onSchedule(
  * The running totals are maintained by deltas, and a delta that goes missing is
  * invisible - a wrong total looks exactly like a right one. This is the way back.
  */
-export const rebuildTotals = onCall(async (request) => {
+export const rebuildTotals = onCall(PUBLIC, async (request) => {
   const uid = requireUid(request);
   const month = request.data?.month as string | undefined;
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
@@ -185,7 +194,7 @@ export const rebuildTotals = onCall(async (request) => {
  * so it gets the generous memory and time limits; it runs once, not daily.
  */
 export const importLaptop = onCall(
-  { memory: "1GiB", timeoutSeconds: 300 },
+  { ...PUBLIC, memory: "1GiB", timeoutSeconds: 300 },
   async (request) => {
     const uid = requireUid(request);
     try {
@@ -197,7 +206,7 @@ export const importLaptop = onCall(
 );
 
 /** Rebuild every total and insight from the transactions. The general repair. */
-export const repair = onCall({ memory: "512MiB", timeoutSeconds: 120 }, async (request) => {
+export const repair = onCall({ ...PUBLIC, memory: "512MiB", timeoutSeconds: 120 }, async (request) => {
   const uid = requireUid(request);
   return rebuildAll(db, uid);
 });
