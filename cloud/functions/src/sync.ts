@@ -280,16 +280,17 @@ export async function syncLiabilities(
   return cards.length;
 }
 
-const INSIGHTS_STALE_MS = 12 * 60 * 60 * 1000;
+// A week, matching the Sunday recount: inside that, a change waits for it.
+const INSIGHTS_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Sync every linked institution. One failing item must not stop the others.
  *
  * `rebuild` decides whether to finish with a full read of every transaction
- * (rebuilding totals and recomputing insights). The daily scheduled sync does;
- * a manual sync does not, because each full read is ~1,800 documents against a
- * 50,000-a-day quota, and someone tapping Sync repeatedly would exhaust it. A
- * manual sync still rebuilds when repair is needed or insights have gone stale.
+ * (rebuilding totals and recomputing insights). The Sunday scheduled sync does;
+ * the other days and a manual sync do not, because each full read is ~1,800 documents against a
+ * 50,000-a-day quota, and the running totals are kept right by deltas anyway.
+ * Any sync still rebuilds when repair is needed or insights have gone stale.
  */
 export async function syncAll(
   db: Firestore, uid: string, config: PlaidConfig, rebuild = false,

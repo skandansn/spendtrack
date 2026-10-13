@@ -68,7 +68,7 @@ export function Accounts() {
       {!accounts.length ? <ImportCard /> : null}
 
       <Card title="Housekeeping"
-        note="Recount rebuilds every monthly total from the transactions themselves. Sync already does this daily; use it if a figure ever looks off.">
+        note="Recount rebuilds every monthly total from the transactions themselves. Sync already does this every Sunday; use it if a figure ever looks off.">
         <Row>
           <Button title="Recount totals" busy={repairing} onPress={repair} />
           <View style={{ flex: 1 }} />
