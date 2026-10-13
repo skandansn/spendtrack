@@ -269,7 +269,17 @@ def sync_liabilities(conn: sqlite3.Connection, api: plaid_api.PlaidApi, access_t
     try:
         credit = api.liabilities_get(LiabilitiesGetRequest(access_token=access_token)).liabilities.credit
     except plaid.ApiException as exc:
-        if "PRODUCT_NOT_READY" in str(exc) or "PRODUCTS_NOT_SUPPORTED" in str(exc):
+        # None of these mean the sync failed. An institution with only current
+        # accounts and investments - SoFi, for one - has no liabilities to
+        # return, and saying so is the correct answer, not an error. Treating it
+        # as one marks the whole item failed even though its transactions
+        # arrived perfectly well.
+        if any(code in str(exc) for code in (
+            "PRODUCT_NOT_READY",
+            "PRODUCTS_NOT_SUPPORTED",
+            "NO_LIABILITY_ACCOUNTS",
+            "NO_ACCOUNTS",
+        )):
             return 0
         raise
     if not credit:
