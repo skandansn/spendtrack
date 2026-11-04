@@ -17,13 +17,14 @@ import { Firestore, FieldValue } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 
 import { merchantKey, resolve } from "./categorize";
+import { COUNTED_IN_PAYPAL, isPayPalInstitution, viaPayPal } from "./dedupe";
 import { needsRepair, rebuildAll } from "./repair";
 import {
   TotalsAccumulator, Txn, isP2P, netOf, privateDoc, round2, searchTerms, totalsDoc, txnCol, userDoc,
 } from "./model";
 import {
   CreditLiability, PlaidAccount, PlaidConfig, PlaidError, PlaidTransaction,
-  accountsGet, liabilities, transactionsSync,
+  accountsGet, liabilities, transactionsGet, transactionsSync,
 } from "./plaid";
 
 const BATCH_LIMIT = 500;
@@ -52,8 +53,10 @@ function toTxn(
   t: PlaidTransaction,
   overrides: ReadonlyMap<string, string>,
   cache: ReadonlyMap<string, string>,
+  countedInPayPal: boolean,
 ): Txn {
   const date = spentOn(t);
+  const throughPayPal = viaPayPal(t);
   const key = merchantKey(t.name, t.merchant_name);
   const plaidCategory = t.personal_finance_category?.primary ?? null;
   const { category, source, isTransfer } = resolve(key, t.name, plaidCategory, overrides, cache);
@@ -89,6 +92,8 @@ function toTxn(
     p2p: isP2P(t.name, key),
     logoUrl: t.logo_url,
     search: searchTerms({ name: t.name, merchantName: t.merchant_name, merchantKey: key }),
+    viaPayPal: throughPayPal,
+    duplicateOf: countedInPayPal && throughPayPal ? COUNTED_IN_PAYPAL : null,
   };
 }
 
@@ -161,8 +166,11 @@ export async function syncItem(
   uid: string,
   config: PlaidConfig,
   item: Item,
+  paypalLinked: boolean,
 ): Promise<SyncOutcome> {
   const label = item.institutionName || item.itemId;
+  // a card or bank charge made through PayPal is already in PayPal's history
+  const countedInPayPal = paypalLinked && !isPayPalInstitution(item.institutionName);
   const result = await transactionsSync(config, item.accessToken, item.cursor);
 
   const touched = [...result.added, ...result.modified];
@@ -191,7 +199,7 @@ export async function syncItem(
 
     for (const raw of touched) {
       const previous = existing.get(raw.transaction_id);
-      let next = toTxn(raw, overrides, cache);
+      let next = toTxn(raw, overrides, cache, countedInPayPal);
       if (previous) next = preserveLocalEdits(next, previous);
       next = applySplitRule(next, splitRules);
       if (previous) totals.replace(previous, next);
@@ -298,11 +306,12 @@ export async function syncAll(
   const snapshot = await privateDoc(db, uid).get();
   const items = (snapshot.get("items") ?? {}) as Record<string, Omit<Item, "itemId">>;
   const outcomes: SyncOutcome[] = [];
+  const paypalLinked = Object.values(items).some((i) => isPayPalInstitution(i.institutionName));
 
   for (const [itemId, stored] of Object.entries(items)) {
     const item: Item = { itemId, ...stored };
     try {
-      const outcome = await syncItem(db, uid, config, item);
+      const outcome = await syncItem(db, uid, config, item, paypalLinked);
       await syncLiabilities(db, uid, config, item.accessToken);
       outcomes.push(outcome);
     } catch (error) {
@@ -328,8 +337,15 @@ export async function syncAll(
     lastSyncAt: FieldValue.serverTimestamp(),
   }, { merge: true });
 
+  const changed = outcomes.some((o) => o.added || o.modified || o.removed);
   let shouldRebuild = rebuild || await needsRepair(db, uid);
-  if (!shouldRebuild && outcomes.some((o) => o.added || o.modified || o.removed)) {
+  if (paypalLinked && !snapshot.get("viaPayPalBackfilled")) {
+    const marked = await backfillViaPayPal(db, uid, config,
+      Object.entries(items).map(([itemId, stored]) => ({ itemId, ...stored })));
+    logger.info("viaPayPal backfilled", { uid, marked });
+    shouldRebuild = true;
+  }
+  if (!shouldRebuild && changed) {
     const insights = await userDoc(db, uid).collection("insights").doc("current").get();
     const at = insights.get("computedAt")?.toMillis?.() ?? 0;
     shouldRebuild = Date.now() - at > INSIGHTS_STALE_MS;
@@ -339,6 +355,50 @@ export async function syncAll(
     logger.info("rebuilt", { uid, ...rebuilt });
   }
   return outcomes;
+}
+
+/**
+ * One-off: history synced before `viaPayPal` was stored has no record of which
+ * charges went through PayPal. Plaid still knows, so ask it - a range read that
+ * leaves the sync cursor alone - and mark the ones that did. Runs once, the
+ * first time PayPal is linked; the rebuild that follows settles the duplicates.
+ */
+async function backfillViaPayPal(
+  db: Firestore, uid: string, config: PlaidConfig, items: Item[],
+): Promise<number> {
+  const end = new Date();
+  const start = new Date(end.getTime() - 730 * 24 * 60 * 60 * 1000);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+  const flagged: string[] = [];
+  let complete = true;
+  for (const item of items) {
+    if (isPayPalInstitution(item.institutionName)) continue;
+    try {
+      const txns = await transactionsGet(config, item.accessToken, iso(start), iso(end));
+      flagged.push(...txns.filter(viaPayPal).map((t) => t.transaction_id));
+    } catch (error) {
+      // one institution needing a re-login must not fail the sync; it is
+      // retried next time, with whatever was marked here kept
+      logger.warn("viaPayPal backfill skipped an item", { itemId: item.itemId, error: String(error) });
+      complete = false;
+    }
+  }
+
+  let marked = 0;
+  for (let i = 0; i < flagged.length; i += BATCH_LIMIT) {
+    // only documents that exist: a merge onto a missing id would create a stub
+    const docs = await db.getAll(...flagged.slice(i, i + BATCH_LIMIT).map((id) => txnCol(db, uid).doc(id)));
+    const batch = db.batch();
+    for (const doc of docs) {
+      if (!doc.exists) continue;
+      batch.set(doc.ref, { viaPayPal: true }, { merge: true });
+      marked++;
+    }
+    await batch.commit();
+  }
+  if (complete) await privateDoc(db, uid).set({ viaPayPalBackfilled: true }, { merge: true });
+  return marked;
 }
 
 export { totalsDoc };

@@ -116,7 +116,7 @@ export function findRecurring(txns: Txn[], today: string): Recurring[] {
 export function findReview(txns: Txn[], limit = 50): ReviewItem[] {
   const groups = new Map<string, ReviewItem & { weight: number }>();
   for (const t of txns) {
-    if (t.isTransfer || !["uncategorized", "plaid"].includes(t.categorySource)) continue;
+    if (t.isTransfer || t.duplicateOf || !["uncategorized", "plaid"].includes(t.categorySource)) continue;
     const g = groups.get(t.merchantKey);
     if (!g) {
       groups.set(t.merchantKey, {

@@ -54,6 +54,8 @@ export interface Txn {
   p2p: boolean;            // Zelle, Venmo and friends - sorted by hand
   logoUrl: string | null;
   search: string[];        // word prefixes, for array-contains search
+  viaPayPal?: boolean;     // Plaid says PayPal processed it - see dedupe.ts
+  duplicateOf?: string | null;  // "paypal": counted in PayPal's history instead
 }
 
 export interface MonthTotals {
@@ -77,8 +79,8 @@ export const isP2P = (name: string | null, merchantKey: string): boolean => {
 };
 
 /** Spend means money out that is neither an internal transfer nor income. */
-export const countsAsSpend = (t: Pick<Txn, "isTransfer" | "category">): boolean =>
-  !t.isTransfer && t.category !== "Income";
+export const countsAsSpend = (t: Pick<Txn, "isTransfer" | "category" | "duplicateOf">): boolean =>
+  !t.isTransfer && t.category !== "Income" && !t.duplicateOf;
 
 /**
  * Firestore has no LIKE, so each transaction carries the prefixes of the words
@@ -140,6 +142,8 @@ export function fold(delta: Delta, t: Txn, sign: 1 | -1, countIt = true): void {
 }
 
 function foldPart(part: Part, t: Txn, sign: 1 | -1, countIt: boolean): void {
+  // the card's copy of the same purchase carries it, income and all
+  if (t.duplicateOf) return;
   if (countIt && countsAsSpend(t)) part.count += sign;
   if (t.category === "Income") {
     part.income -= sign * t.amount;            // inflows are negative in Plaid's sign

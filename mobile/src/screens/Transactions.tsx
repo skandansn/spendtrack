@@ -154,6 +154,7 @@ const TxnRow = React.memo(function TxnRow({ txn, account, onPress }: {
             {shortDate(txn.date)} · {txn.category}{account ? ` · ${account}` : ""}
           </Text>
           {txn.pending ? <Pill text="pending" /> : null}
+          {txn.duplicateOf ? <Pill text="via PayPal · counted there" /> : null}
           {txn.splitOwed > 0 ? <Pill text={txn.splitSettled ? "split · repaid" : "split"} tone={txn.splitSettled ? "good" : undefined} /> : null}
           {txn.cashback > 0 ? <Pill text={txn.cashbackReceived ? "cashback · in" : "cashback"} tone="good" /> : null}
           {txn.categorySource === "uncategorized" ? <Pill text="review" tone="warn" /> : null}

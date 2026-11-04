@@ -90,6 +90,9 @@ export interface PlaidTransaction {
   pending: boolean;
   logo_url: string | null;
   personal_finance_category: { primary: string } | null;
+  // who handled the payment: "PayPal" for a card charge made through PayPal
+  payment_meta?: { payment_processor: string | null } | null;
+  counterparties?: { name: string | null; type: string }[] | null;
 }
 
 interface SyncPage {
@@ -116,6 +119,26 @@ export interface SyncResult {
  * changed since last time, so a run that finds nothing new transfers nothing
  * and costs one request.
  */
+/**
+ * A date range of transactions, outside the sync cursor. For backfilling fields
+ * an earlier version did not store: it reads history without moving the cursor,
+ * so the next sync carries on exactly where it was.
+ */
+export async function transactionsGet(
+  config: PlaidConfig, accessToken: string, startDate: string, endDate: string,
+): Promise<PlaidTransaction[]> {
+  const all: PlaidTransaction[] = [];
+  for (;;) {
+    const page = await call<{ transactions: PlaidTransaction[]; total_transactions: number }>(
+      config, "/transactions/get", {
+        access_token: accessToken, start_date: startDate, end_date: endDate,
+        options: { count: 500, offset: all.length },
+      });
+    all.push(...page.transactions);
+    if (!page.transactions.length || all.length >= page.total_transactions) return all;
+  }
+}
+
 export async function transactionsSync(
   config: PlaidConfig,
   accessToken: string,

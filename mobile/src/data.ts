@@ -59,6 +59,7 @@ export interface Txn {
   p2p: boolean;
   logoUrl: string | null;
   search?: string[];
+  duplicateOf?: string | null;
 }
 
 export interface MonthTotals {
@@ -164,8 +165,8 @@ export function recentMonths(count: number): string[] {
 // --- money and totals --------------------------------------------------------
 
 export const round2 = (v: number) => Math.round(v * 100) / 100;
-const countsAsSpend = (t: Pick<Txn, "isTransfer" | "category">) =>
-  !t.isTransfer && t.category !== "Income";
+const countsAsSpend = (t: Pick<Txn, "isTransfer" | "category" | "duplicateOf">) =>
+  !t.isTransfer && t.category !== "Income" && !t.duplicateOf;
 export const netOf = (t: Pick<Txn, "amount" | "cashback" | "splitOwed">) =>
   round2(t.amount - (t.cashback || 0) - (t.splitOwed || 0));
 
@@ -183,6 +184,7 @@ function fold(delta: Delta, t: Txn, sign: 1 | -1): void {
 }
 
 function foldPart(part: Part, t: Txn, sign: 1 | -1): void {
+  if (t.duplicateOf) return;
   if (countsAsSpend(t)) part.count += sign;
   if (t.category === "Income") {
     part.income -= sign * t.amount;

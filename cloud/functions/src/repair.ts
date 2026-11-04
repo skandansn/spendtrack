@@ -15,6 +15,7 @@
 
 import { Firestore, FieldValue } from "firebase-admin/firestore";
 
+import { paypalAccounts, settleDuplicates } from "./dedupe";
 import { findRecurring, findReview } from "./insights";
 import {
   Delta, Txn, emptyDelta, fold, isP2P, privateDoc, removeDottedFields, round2, searchTerms,
@@ -28,6 +29,17 @@ export async function rebuildAll(db: Firestore, uid: string) {
     user.collection("totals").get(),
   ]);
   const txns = txnSnap.docs.map((d) => d.data() as Txn);
+
+  // Settle PayPal duplicates before anything is summed, so the totals and the
+  // insights below see each purchase once.
+  const paired = settleDuplicates(txns, await paypalAccounts(db, uid));
+  const relabelled = new Map<string, string | null>();
+  for (const t of txns) {
+    const duplicateOf = paired.get(t.txnId);
+    if (duplicateOf === undefined || duplicateOf === (t.duplicateOf ?? null)) continue;
+    t.duplicateOf = duplicateOf;
+    relabelled.set(t.txnId, duplicateOf);
+  }
 
   const months = new Map<string, Delta>();
   for (const t of txns) {
@@ -72,6 +84,10 @@ export async function rebuildAll(db: Firestore, uid: string) {
       backfilled++;
       if (++pending >= 450) await commit();
     }
+    if (relabelled.has(doc.id)) {
+      batch.set(doc.ref, { duplicateOf: relabelled.get(doc.id) }, { merge: true });
+      if (++pending >= 450) await commit();
+    }
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -96,14 +112,16 @@ export async function rebuildAll(db: Firestore, uid: string) {
     review: review.length,
     junkRemoved: removed.length,
     backfilled,
+    duplicatesRelabelled: relabelled.size,
   };
 }
 
 /**
  * Bumped whenever stored data gains something only a full rebuild can fill in
- * for existing transactions. 2: per-account totals and search terms.
+ * for existing transactions. 2: per-account totals and search terms. 3, 4: PayPal
+ * duplicates marked across all history, 4 from Plaid's payment metadata.
  */
-const SCHEMA = 2;
+const SCHEMA = 4;
 
 /**
  * True when the private document carries debris from the dotted-key bug, or
