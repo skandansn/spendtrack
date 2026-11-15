@@ -7,12 +7,10 @@ import { LinkBank } from "../components/LinkBank";
 import { Account, useAccounts, useInstitutions } from "../data";
 import { auth, callRepair } from "../firebase";
 import { daysUntil, money0, moneyExact, shortDate } from "../money";
-import { space, useTheme } from "../theme";
-import { Avatar, Button, Card, Divided, Pill, Row, textStyles } from "../ui";
+import { C, T, space } from "../theme";
+import { Avatar, Button, Card, Divided, Pill, Row, S, ScreenHeader, screen } from "../ui";
 
 export function Accounts() {
-  const t = useTheme();
-  const s = textStyles(t);
   const accounts = useAccounts();
   const institutions = useInstitutions();
   const [repairing, setRepairing] = useState(false);
@@ -34,9 +32,10 @@ export function Accounts() {
   };
 
   return (
-    <ScrollView style={{ backgroundColor: t.plane }}
-      contentContainerStyle={{ padding: space(4), paddingBottom: space(16), gap: space(4) }}>
-      <Text style={{ color: t.text, fontSize: 26, fontWeight: "700", letterSpacing: -0.8 }}>Accounts</Text>
+    <ScrollView style={{ backgroundColor: C.ground }}
+      contentContainerStyle={screen}>
+      <ScreenHeader title="Accounts"
+        overline={`${institutions.length} bank${institutions.length === 1 ? "" : "s"} · ${accounts.length} account${accounts.length === 1 ? "" : "s"}`} />
 
       {institutions.map((inst) => {
         const broken = inst.status === "login_required";
@@ -44,7 +43,7 @@ export function Accounts() {
           <Card key={inst.itemId}>
             <Row style={{ marginBottom: space(2) }}>
               <Avatar uri={inst.logo ? `data:image/png;base64,${inst.logo}` : null} label={inst.name ?? "?"} />
-              <Text style={[s.primary, { flex: 1, fontSize: 17 }]}>{inst.name ?? "Bank"}</Text>
+              <Text style={[T.section, { color: C.text, flex: 1 }]} numberOfLines={1}>{inst.name ?? "Bank"}</Text>
               {broken ? <Pill text="sign-in needed" tone="warn" /> : null}
             </Row>
             <Divided>
@@ -74,16 +73,14 @@ export function Accounts() {
           <View style={{ flex: 1 }} />
           <Button kind="danger" title="Sign out" onPress={() => void signOut(auth)} />
         </Row>
-        {note ? <Text style={[s.secondary, { marginTop: space(3) }]}>{note}</Text> : null}
-        <Text style={[s.muted, { marginTop: space(3) }]}>Signed in as {auth.currentUser?.email}</Text>
+        {note ? <Text style={[S.secondary, { marginTop: space(3) }]}>{note}</Text> : null}
+        <Text style={[S.muted, { marginTop: space(3) }]}>Signed in as {auth.currentUser?.email}</Text>
       </Card>
     </ScrollView>
   );
 }
 
 function AccountRow({ a }: { a: Account }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const credit = a.type === "credit";
   const balance = credit ? a.currentBalance : a.availableBalance ?? a.currentBalance;
   const due = a.nextPaymentDueDate ? daysUntil(a.nextPaymentDueDate) : null;
@@ -96,18 +93,18 @@ function AccountRow({ a }: { a: Account }) {
   return (
     <Row>
       <View style={{ flex: 1 }}>
-        <Text style={s.primary} numberOfLines={1}>{a.name}{a.mask ? ` ·${a.mask}` : ""}</Text>
-        {details ? <Text style={s.muted}>{details}</Text> : null}
+        <Text style={S.primary} numberOfLines={1}>{a.name}{a.mask ? ` ·${a.mask}` : ""}</Text>
+        {details ? <Text style={S.muted}>{details}</Text> : null}
         {credit && a.nextPaymentDueDate ? (
-          <Text style={[s.muted, (a.isOverdue || (due != null && due <= 3)) && { color: t.critical }]}>
+          <Text style={[S.muted, (a.isOverdue || (due != null && due <= 3)) && { color: C.down }]}>
             {a.isOverdue ? "Overdue" : `Due ${shortDate(a.nextPaymentDueDate)}${due != null && due >= 0 ? ` · in ${due}d` : ""}`}
           </Text>
         ) : null}
       </View>
       <View>
-        <Text style={s.number}>{balance == null ? "—" : moneyExact(balance)}</Text>
+        <Text style={S.number}>{balance == null ? "—" : moneyExact(balance)}</Text>
         {credit && a.creditLimit && balance != null ? (
-          <Text style={[s.muted, { textAlign: "right" }]}>{Math.round((balance / a.creditLimit) * 100)}% used</Text>
+          <Text style={[S.muted, { textAlign: "right" }]}>{Math.round((balance / a.creditLimit) * 100)}% used</Text>
         ) : null}
       </View>
     </Row>

@@ -5,8 +5,8 @@ import {
   CATEGORIES, PAYOUTS, Txn, clearCashback, clearSplit, round2, setCashback, setCategory, setSplit,
 } from "../data";
 import { moneyExact, shortDate } from "../money";
-import { space, useTheme } from "../theme";
-import { Button, Chips, Field, Row, Sheet, textStyles } from "../ui";
+import { C, T, space } from "../theme";
+import { Button, Chips, Field, Row, Sheet, S } from "../ui";
 
 type Mode = "category" | "split" | "cashback";
 
@@ -18,8 +18,6 @@ type Mode = "category" | "split" | "cashback";
 export function TxnSheet({ txn, onClose, onChanged }: {
   txn: Txn | null; onClose: () => void; onChanged: () => void;
 }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const [mode, setMode] = useState<Mode>("category");
   useEffect(() => { setMode("category"); }, [txn?.txnId]);
   if (!txn) return null;
@@ -40,13 +38,12 @@ export function TxnSheet({ txn, onClose, onChanged }: {
       {mode === "category" ? <CategoryTab txn={txn} done={() => { onChanged(); onClose(); }} /> : null}
       {mode === "split" ? <SplitTab txn={txn} done={() => { onChanged(); onClose(); }} /> : null}
       {mode === "cashback" ? <CashbackTab txn={txn} done={() => { onChanged(); onClose(); }} /> : null}
-      {credit ? <Text style={[s.muted, { marginTop: space(4) }]}>Credits can be recategorised, but splits and cashback apply to purchases.</Text> : null}
+      {credit ? <Text style={[S.muted, { marginTop: space(4) }]}>Credits can be recategorised, but splits and cashback apply to purchases.</Text> : null}
     </Sheet>
   );
 }
 
 function CategoryTab({ txn, done }: { txn: Txn; done: () => void }) {
-  const t = useTheme();
   const [scope, setScope] = useState<"merchant" | "one">(txn.p2p ? "one" : "merchant");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +53,7 @@ function CategoryTab({ txn, done }: { txn: Txn; done: () => void }) {
         <Chips options={["merchant", "one"] as const} value={scope} onChange={setScope}
           labels={{ merchant: "Every one from them", one: "Just this one" }} />
       </View>
-      <Text style={[textStyles(t).muted, { marginBottom: space(3) }]}>
+      <Text style={[S.muted, { marginBottom: space(3) }]}>
         {scope === "merchant"
           ? "Past and future transactions from this merchant follow your answer."
           : "Only this transaction changes."}
@@ -68,8 +65,8 @@ function CategoryTab({ txn, done }: { txn: Txn; done: () => void }) {
         catch (e) { setError((e as Error).message); }
         finally { setBusy(false); }
       }} />
-      {busy ? <Text style={{ color: t.muted, marginTop: space(3) }}>Saving…</Text> : null}
-      {error ? <Text style={textStyles(t).error}>{error}</Text> : null}
+      {busy ? <Text style={[T.label, { color: C.muted, marginTop: space(3) }]}>Saving…</Text> : null}
+      {error ? <Text style={S.error}>{error}</Text> : null}
     </View>
   );
 }
@@ -81,8 +78,6 @@ function CategoryTab({ txn, done }: { txn: Txn; done: () => void }) {
  * people expresses it.
  */
 function SplitTab({ txn, done }: { txn: Txn; done: () => void }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const has = txn.splitOwed > 0;
   const whole = has && Math.abs(txn.splitOwed - txn.amount) < 0.005;
   const ways = has && !whole ? txn.amount / (txn.amount - txn.splitOwed) : 2;
@@ -127,7 +122,7 @@ function SplitTab({ txn, done }: { txn: Txn; done: () => void }) {
           onChange={(v) => setEveryCharge(v === "always")}
           labels={{ once: "Just this charge", always: "Every charge from them" }} />
       </View>
-      <Text style={[s.secondary, { marginBottom: space(4) }]}>
+      <Text style={[S.secondary, { marginBottom: space(4) }]}>
         {owed > 0
           ? mine < 0.005 ? `${moneyExact(owed)} owed to you · none of it counts as your spend`
             : `${moneyExact(owed)} owed to you · counts as ${moneyExact(mine)} of your spend`
@@ -141,14 +136,12 @@ function SplitTab({ txn, done }: { txn: Txn; done: () => void }) {
         <View style={{ flex: 1 }} />
         <Button kind="primary" title="Save" busy={busy} disabled={!(owed > 0) && mode !== "all"} onPress={save} />
       </Row>
-      {error ? <Text style={s.error}>{error}</Text> : null}
+      {error ? <Text style={S.error}>{error}</Text> : null}
     </View>
   );
 }
 
 function CashbackTab({ txn, done }: { txn: Txn; done: () => void }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const has = txn.cashback > 0;
   const [unit, setUnit] = useState<"percent" | "amount">(has && txn.cashbackPct == null ? "amount" : "percent");
   const [value, setValue] = useState(has ? String(txn.cashbackPct ?? txn.cashback) : "");
@@ -179,7 +172,7 @@ function CashbackTab({ txn, done }: { txn: Txn; done: () => void }) {
       </View>
       <Field label={unit === "percent" ? "Percent" : "Dollars"} keyboardType="decimal-pad" value={value}
         onChangeText={(v) => setValue(v.replace(/[^0-9.]/g, ""))} />
-      <Text style={[s.secondary, { marginBottom: space(2) }]}>Paid out as</Text>
+      <Text style={[S.secondary, { marginBottom: space(2) }]}>Paid out as</Text>
       <View style={{ marginBottom: space(3) }}>
         <Chips options={Object.keys(PAYOUTS)} value={payout} onChange={setPayout}
           labels={Object.fromEntries(Object.entries(PAYOUTS).map(([k, v]) => [k, v.label]))} />
@@ -190,7 +183,7 @@ function CashbackTab({ txn, done }: { txn: Txn; done: () => void }) {
           onChange={(v) => setReceived(v === "received")}
           labels={{ pending: "Not paid out yet", received: "Already received" }} />
       </View>
-      <Text style={[s.secondary, { marginBottom: space(4) }]}>
+      <Text style={[S.secondary, { marginBottom: space(4) }]}>
         {back > 0
           ? `${moneyExact(back)} back${p?.points ? ` · ${Math.round(back * 100).toLocaleString()} ${p.label} points` : ""} · counts as ${moneyExact(Math.max(txn.amount - back, 0))} of spend`
           : "Enter how much comes back."}
@@ -203,7 +196,7 @@ function CashbackTab({ txn, done }: { txn: Txn; done: () => void }) {
         <View style={{ flex: 1 }} />
         <Button kind="primary" title="Save" busy={busy} disabled={!(back > 0)} onPress={save} />
       </Row>
-      {error ? <Text style={s.error}>{error}</Text> : null}
+      {error ? <Text style={S.error}>{error}</Text> : null}
     </View>
   );
 }

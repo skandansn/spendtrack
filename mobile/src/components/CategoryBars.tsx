@@ -1,8 +1,9 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
-import { Theme, radius, space, useTheme } from "../theme";
+import { C, T, radius, space } from "../theme";
 import { money0 } from "../money";
+import { Meter } from "../ui";
 
 export interface Row {
   category: string;
@@ -16,7 +17,7 @@ interface Props {
 }
 
 /**
- * Spend by category.
+ * Spend by category, as ranked rows with a meter under each name.
  *
  * One series, so one colour for every bar. Colouring each bar by its own size
  * would double-encode the length the bar already shows, and burn the only free
@@ -26,58 +27,38 @@ interface Props {
  * without the hover tooltip a phone cannot offer.
  */
 export function CategoryBars({ rows, selected, onSelect }: Props) {
-  const theme = useTheme();
-  const styles = sheet(theme);
-  const max = Math.max(...rows.map((r) => r.amount), 1);
-
   if (!rows.length) {
-    return <Text style={styles.empty}>No spend in this period.</Text>;
+    return <Text style={[T.label, { color: C.muted, textAlign: "center", paddingVertical: space(6) }]}>No spend in this period.</Text>;
   }
+  const max = rows[0]!.amount;
 
   return (
     <View>
-      {rows.map((row) => {
+      {rows.map((row, i) => {
         const active = selected === row.category;
         return (
           <Pressable
             key={row.category}
             onPress={() => onSelect?.(active ? null : row.category)}
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            style={({ pressed }) => ({
+              flexDirection: "row", alignItems: "center", gap: space(3), paddingVertical: space(2),
+              borderRadius: radius.row, opacity: pressed ? 0.6 : 1,
+            })}
             accessibilityRole="button"
             accessibilityLabel={`${row.category}, ${money0(row.amount)}`}
           >
-            <Text style={styles.name} numberOfLines={1}>{row.category}</Text>
-            <View style={styles.track}>
-              <View style={[styles.fill, {
-                width: `${Math.max((row.amount / max) * 100, 1.5)}%`,
-                backgroundColor: theme.series[0],
-                opacity: active || !selected ? 1 : 0.4,
-              }]} />
+            <Text style={[T.rank, { color: C.muted, width: 22 }]}>{i + 1}</Text>
+            <View style={{ flex: 1, gap: space(1.5) }}>
+              <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+                <Text style={[T.bodyStrong, { color: C.text, flex: 1 }]} numberOfLines={1}>{row.category}</Text>
+                <Text style={[T.rank, { color: C.text }]}>{money0(row.amount)}</Text>
+              </View>
+              <Meter fraction={Math.max(row.amount / max, 0.015)}
+                color={active || !selected ? C.accent : C.accentDim} />
             </View>
-            <Text style={styles.value}>{money0(row.amount)}</Text>
           </Pressable>
         );
       })}
     </View>
   );
 }
-
-const sheet = (theme: Theme) => StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: space(2), paddingVertical: space(1.5) },
-  pressed: { opacity: 0.6 },
-  name: { width: 88, textAlign: "right", color: theme.textSecondary, fontSize: 13 },
-  track: { flex: 1, height: 18, justifyContent: "center" },
-  // rounded only at the data end, so the bar stays anchored to its baseline
-  fill: { height: "100%", borderTopRightRadius: 4, borderBottomRightRadius: 4, minWidth: 3 },
-  value: { width: 72, textAlign: "right", color: theme.text, fontSize: 13,
-           fontVariant: ["tabular-nums"] },
-  empty: { color: theme.muted, textAlign: "center", paddingVertical: space(6) },
-});
-
-export const cardStyle = (theme: Theme) => ({
-  backgroundColor: theme.surface,
-  borderColor: theme.border,
-  borderWidth: 1,
-  borderRadius: radius.card,
-  padding: space(5),
-});

@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
 
 import { TxnSheet } from "../components/TxnSheet";
 import {
   CATEGORIES, SORTS, Sort, Txn, TxnFilter, recentMonths, searchWords, useAccounts, useTransactions,
 } from "../data";
 import { moneyExact, monthName, shortDate } from "../money";
-import { radius, space, useTheme } from "../theme";
-import { Avatar, Chips, Pill, Sheet, textStyles } from "../ui";
+import { C, space } from "../theme";
+import { Avatar, Chip, Chips, Pill, S, ScreenHeader, SearchField, Sheet } from "../ui";
 
 const ALL = "all";
 const SORT_LABELS: Record<Sort, string> = {
@@ -17,8 +17,6 @@ const SORT_LABELS: Record<Sort, string> = {
 export function Transactions({ filter, onFilter }: {
   filter: TxnFilter; onFilter: (f: TxnFilter) => void;
 }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const accounts = useAccounts();
   const { rows, loading, done, error, more, reload } = useTransactions(filter);
   const [open, setOpen] = useState<Txn | null>(null);
@@ -39,45 +37,39 @@ export function Transactions({ filter, onFilter }: {
   const set = (patch: Partial<TxnFilter>) => { onFilter({ ...filter, ...patch }); setPicking(null); };
 
   const header = (
-    <View style={{ gap: space(3), marginBottom: space(3) }}>
-      <TextInput value={text} onChangeText={setText} placeholder="Search merchants" placeholderTextColor={t.muted}
-        autoCapitalize="none" autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing"
-        style={{
-          color: t.text, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border,
-          borderRadius: radius.pill, paddingHorizontal: space(4), paddingVertical: space(2.5), fontSize: 15,
-        }} />
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
-        <FilterChip label={filter.month ? monthName(filter.month, true) : "Any month"} on={!!filter.month}
+    <View style={{ gap: space(4), marginBottom: space(3) }}>
+      <ScreenHeader overline={filter.month ? monthName(filter.month, true) : "Every month"} title="Transactions" />
+      <SearchField value={text} onChangeText={setText} />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(1.5) }}>
+        <Chip label={filter.month ? monthName(filter.month, true) : "Any month"} on={!!filter.month}
           onPress={() => setPicking("month")} />
-        <FilterChip label={filter.category ?? "Any category"} on={!!filter.category}
+        <Chip label={filter.category ?? "Any category"} on={!!filter.category}
           onPress={() => setPicking("category")} />
-        <FilterChip label={filter.accountId ? accountName.get(filter.accountId) ?? "Account" : "Any account"}
+        <Chip label={filter.accountId ? accountName.get(filter.accountId) ?? "Account" : "Any account"}
           on={!!filter.accountId} onPress={() => setPicking("account")} />
         {!filter.category ? (
-          <FilterChip label="Transfers" on={!!filter.includeTransfers}
+          <Chip label="Transfers" on={!!filter.includeTransfers}
             onPress={() => set({ includeTransfers: !filter.includeTransfers })} />
         ) : null}
-        <FilterChip label={SORT_LABELS[filter.sort ?? "newest"]} on={(filter.sort ?? "newest") !== "newest"}
+        <Chip label={SORT_LABELS[filter.sort ?? "newest"]} on={(filter.sort ?? "newest") !== "newest"}
           onPress={() => setPicking("sort")} />
+        {filter.month || filter.category || filter.accountId || filter.q ? (
+          <Chip label="Clear" on={false} onPress={() => onFilter({})} />
+        ) : null}
       </View>
       {filter.q && rows.length >= 500 ? (
-        <Text style={s.muted}>Showing the newest 500 matches - add a word to narrow it.</Text>
-      ) : null}
-      {filter.month || filter.category || filter.accountId || filter.q ? (
-        <Pressable onPress={() => onFilter({})}>
-          <Text style={s.muted}>Clear filters</Text>
-        </Pressable>
+        <Text style={S.muted}>Showing the newest 500 matches - add a word to narrow it.</Text>
       ) : null}
     </View>
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.plane }}>
+    <View style={{ flex: 1, backgroundColor: C.ground }}>
       <FlatList
         data={rows}
         keyExtractor={(r) => r.txnId}
         ListHeaderComponent={header}
-        contentContainerStyle={{ padding: space(4), paddingBottom: space(16) }}
+        contentContainerStyle={{ paddingHorizontal: space(5), paddingTop: space(3), paddingBottom: space(7) }}
         onEndReachedThreshold={0.5}
         onEndReached={more}
         refreshing={false}
@@ -85,14 +77,13 @@ export function Transactions({ filter, onFilter }: {
         renderItem={({ item }) => (
           <TxnRow txn={item} account={accountName.get(item.accountId)} onPress={() => setOpen(item)} />
         )}
-        ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: t.grid }} />}
         ListEmptyComponent={loading ? null
-          : <Text style={[error ? s.error : s.muted, { textAlign: "center", paddingVertical: space(10) }]}>
+          : <Text style={[error ? S.error : S.muted, { textAlign: "center", paddingVertical: space(10) }]}>
               {error ?? "Nothing matches."}
             </Text>}
         ListFooterComponent={loading
-          ? <ActivityIndicator style={{ marginVertical: space(6) }} color={t.muted} />
-          : done && rows.length ? <Text style={[s.muted, { textAlign: "center", marginTop: space(4) }]}>That's everything.</Text> : null}
+          ? <ActivityIndicator style={{ marginVertical: space(6) }} color={C.muted} />
+          : done && rows.length ? <Text style={[S.muted, { textAlign: "center", marginTop: space(4) }]}>That's everything.</Text> : null}
       />
 
       <TxnSheet txn={open} onClose={() => setOpen(null)} onChanged={reload} />
@@ -119,38 +110,22 @@ export function Transactions({ filter, onFilter }: {
   );
 }
 
-function FilterChip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
-  const t = useTheme();
-  return (
-    <Pressable onPress={onPress} style={{
-      paddingHorizontal: space(3.5), paddingVertical: space(2), borderRadius: 999, borderWidth: 1,
-      borderColor: on ? t.text : t.border, backgroundColor: on ? t.text : "transparent",
-    }}>
-      <Text style={{ color: on ? t.plane : t.textSecondary, fontSize: 13, fontWeight: on ? "600" : "400" }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 const TxnRow = React.memo(function TxnRow({ txn, account, onPress }: {
   txn: Txn; account?: string; onPress: () => void;
 }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const label = txn.merchantName || txn.name || txn.merchantKey;
   const credit = txn.amount < 0;
   const adjusted = txn.cashback > 0 || txn.splitOwed > 0;
   return (
     <Pressable onPress={onPress} style={({ pressed }) => ({
-      flexDirection: "row", alignItems: "center", gap: space(3), paddingVertical: space(3),
+      flexDirection: "row", alignItems: "center", gap: space(3), paddingVertical: space(2.5),
       opacity: pressed ? 0.6 : 1,
     })}>
       <Avatar uri={txn.logoUrl} label={label} />
       <View style={{ flex: 1 }}>
-        <Text style={s.primary} numberOfLines={1}>{label}</Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space(1.5), marginTop: 2 }}>
-          <Text style={s.muted} numberOfLines={1}>
+        <Text style={S.primary} numberOfLines={1}>{label}</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space(1.5), marginTop: 3 }}>
+          <Text style={S.muted} numberOfLines={1}>
             {shortDate(txn.date)} · {txn.category}{account ? ` · ${account}` : ""}
           </Text>
           {txn.pending ? <Pill text="pending" /> : null}
@@ -161,8 +136,8 @@ const TxnRow = React.memo(function TxnRow({ txn, account, onPress }: {
         </View>
       </View>
       <View>
-        <Text style={[s.number, credit && { color: t.good }]}>{moneyExact(-txn.amount)}</Text>
-        {adjusted ? <Text style={[s.muted, { textAlign: "right" }]}>yours {moneyExact(txn.net)}</Text> : null}
+        <Text style={[S.number, credit && { color: C.accent }]}>{moneyExact(-txn.amount)}</Text>
+        {adjusted ? <Text style={[S.muted, { textAlign: "right" }]}>yours {moneyExact(txn.net)}</Text> : null}
       </View>
     </Pressable>
   );

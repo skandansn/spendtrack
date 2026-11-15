@@ -6,14 +6,13 @@ import {
   setBudget, setCategory,
 } from "../data";
 import { daysUntil, money, money0, moneyExact, shortDate } from "../money";
-import { space, useTheme } from "../theme";
-import { Avatar, Button, Card, Chips, Divided, Field, Pill, Row, Sheet, textStyles } from "../ui";
+import { C, T, space } from "../theme";
+import { Avatar, Button, Card, Chips, Divided, Field, Pill, Row, Sheet, S } from "../ui";
 
 /** What the review and P2P panels hand to the category picker. */
 type Pick = { title: string; txn: Txn; scopes: ("merchant" | "one")[] };
 
 export function CategoryPicker({ pick, onDone }: { pick: Pick | null; onDone: () => void }) {
-  const t = useTheme();
   const [scope, setScope] = useState<"merchant" | "one">("merchant");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,8 +45,8 @@ export function CategoryPicker({ pick, onDone }: { pick: Pick | null; onDone: ()
       ) : null}
       <Chips options={CATEGORIES} value={pick.txn.category as (typeof CATEGORIES)[number]}
         onChange={(c) => { if (!busy) void choose(c); }} />
-      {busy ? <Text style={{ color: t.muted, marginTop: space(3) }}>Saving…</Text> : null}
-      {error ? <Text style={textStyles(t).error}>{error}</Text> : null}
+      {busy ? <Text style={[T.label, { color: C.muted, marginTop: space(3) }]}>Saving…</Text> : null}
+      {error ? <Text style={S.error}>{error}</Text> : null}
     </Sheet>
   );
 }
@@ -58,8 +57,6 @@ const reviewTarget = (r: ReviewItem): Txn => ({
 } as Txn);
 
 export function ReviewCard({ insights }: { insights: Insights | null }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const [pick, setPick] = useState<Pick | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
   // answered merchants vanish now; the server's list catches up on the next sync
@@ -67,15 +64,15 @@ export function ReviewCard({ insights }: { insights: Insights | null }) {
   if (!rows.length) return null;
 
   return (
-    <Card title="Needs review"
+    <Card title="Needs review" tone="second"
       note="No rule matched these and no model was confident. One answer covers every transaction from that merchant.">
       <Divided>
         {rows.slice(0, 8).map((r) => (
           <Row key={r.merchantKey}>
             <Avatar uri={r.logoUrl} label={r.merchantName || r.merchantKey} />
             <View style={{ flex: 1 }}>
-              <Text style={s.primary} numberOfLines={1}>{r.merchantName || r.merchantKey}</Text>
-              <Text style={s.muted}>{r.txns} txn · {money(r.amount)} · {r.categorySource === "plaid" ? `Plaid guessed ${r.category}` : "no guess"}</Text>
+              <Text style={S.primary} numberOfLines={1}>{r.merchantName || r.merchantKey}</Text>
+              <Text style={S.muted}>{r.txns} txn · {money(r.amount)} · {r.categorySource === "plaid" ? `Plaid guessed ${r.category}` : "no guess"}</Text>
             </View>
             <Button small title="Sort" onPress={() => setPick({
               title: r.merchantName || r.merchantKey, txn: reviewTarget(r), scopes: ["merchant"],
@@ -92,8 +89,6 @@ export function ReviewCard({ insights }: { insights: Insights | null }) {
 }
 
 export function P2PCard({ rows }: { rows: Txn[] }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const [pick, setPick] = useState<Pick | null>(null);
   if (!rows.length) return null;
   return (
@@ -103,10 +98,10 @@ export function P2PCard({ rows }: { rows: Txn[] }) {
         {rows.slice(0, 10).map((r) => (
           <Row key={r.txnId}>
             <View style={{ flex: 1 }}>
-              <Text style={s.primary} numberOfLines={1}>{r.merchantName || r.name || r.merchantKey}</Text>
-              <Text style={s.muted}>{shortDate(r.date)}</Text>
+              <Text style={S.primary} numberOfLines={1}>{r.merchantName || r.name || r.merchantKey}</Text>
+              <Text style={S.muted}>{shortDate(r.date)}</Text>
             </View>
-            <Text style={[s.number, r.amount < 0 && { color: t.good }]}>{moneyExact(-r.amount)}</Text>
+            <Text style={[S.number, r.amount < 0 && { color: C.accent }]}>{moneyExact(-r.amount)}</Text>
             <Button small title="Sort" onPress={() => setPick({
               title: `${moneyExact(Math.abs(r.amount))} ${r.amount < 0 ? "from" : "to"} ${r.merchantName || r.name}`,
               txn: r, scopes: ["one", "merchant"],
@@ -120,8 +115,6 @@ export function P2PCard({ rows }: { rows: Txn[] }) {
 }
 
 export function CashbackCard({ rows }: { rows: Txn[] }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const [busy, setBusy] = useState<string | null>(null);
   if (!rows.length) return null;
   const total = rows.reduce((sum, r) => sum + r.cashback, 0);
@@ -134,12 +127,12 @@ export function CashbackCard({ rows }: { rows: Txn[] }) {
           return (
             <Row key={r.txnId}>
               <View style={{ flex: 1 }}>
-                <Text style={s.primary} numberOfLines={1}>{r.merchantName || r.merchantKey}</Text>
-                <Text style={s.muted}>{shortDate(r.date)} · {r.cashbackSource || "Rakuten"}</Text>
+                <Text style={S.primary} numberOfLines={1}>{r.merchantName || r.merchantKey}</Text>
+                <Text style={S.muted}>{shortDate(r.date)} · {r.cashbackSource || "Rakuten"}</Text>
               </View>
               <View>
-                <Text style={s.number}>{moneyExact(r.cashback)}</Text>
-                <Text style={[s.muted, { textAlign: "right" }]}>
+                <Text style={S.number}>{moneyExact(r.cashback)}</Text>
+                <Text style={[S.muted, { textAlign: "right" }]}>
                   {payout ? (payout.points ? `${Math.round(r.cashback * 100).toLocaleString()} ${payout.label} pts` : payout.label) : ""}
                 </Text>
               </View>
@@ -156,8 +149,6 @@ export function CashbackCard({ rows }: { rows: Txn[] }) {
 }
 
 export function OwedCard({ rows }: { rows: Txn[] }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const [busy, setBusy] = useState<string | null>(null);
   if (!rows.length) return null;
   const total = rows.reduce((sum, r) => sum + r.splitOwed, 0);
@@ -167,14 +158,14 @@ export function OwedCard({ rows }: { rows: Txn[] }) {
         {rows.map((r) => (
           <Row key={r.txnId}>
             <View style={{ flex: 1 }}>
-              <Text style={s.primary} numberOfLines={1}>{r.merchantName || r.merchantKey}</Text>
-              <Text style={s.muted} numberOfLines={1}>
+              <Text style={S.primary} numberOfLines={1}>{r.merchantName || r.merchantKey}</Text>
+              <Text style={S.muted} numberOfLines={1}>
                 {shortDate(r.date)}{r.splitNote ? ` · ${r.splitNote}` : ""}{r.splitSource === "rule" ? " · rule" : ""}
               </Text>
             </View>
             <View>
-              <Text style={s.number}>{moneyExact(r.splitOwed)}</Text>
-              <Text style={[s.muted, { textAlign: "right" }]}>of {moneyExact(r.amount)}</Text>
+              <Text style={S.number}>{moneyExact(r.splitOwed)}</Text>
+              <Text style={[S.muted, { textAlign: "right" }]}>of {moneyExact(r.amount)}</Text>
             </View>
             <Button small title="Repaid" busy={busy === r.txnId} onPress={async () => {
               setBusy(r.txnId);
@@ -188,8 +179,6 @@ export function OwedCard({ rows }: { rows: Txn[] }) {
 }
 
 export function RecurringCard({ insights }: { insights: Insights | null }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const rows = insights?.recurring ?? [];
   return (
     <Card title="Recurring"
@@ -204,13 +193,13 @@ export function RecurringCard({ insights }: { insights: Insights | null }) {
               <Row key={r.merchantKey}>
                 <Avatar uri={r.logoUrl} label={r.merchantName || r.merchantKey} />
                 <View style={{ flex: 1 }}>
-                  <Text style={s.primary} numberOfLines={1}>{r.merchantName || r.merchantKey}</Text>
-                  <Text style={s.muted}>{r.category}</Text>
+                  <Text style={S.primary} numberOfLines={1}>{r.merchantName || r.merchantKey}</Text>
+                  <Text style={S.muted}>{r.category}</Text>
                 </View>
                 <Pill text={r.cadence} />
                 <View>
-                  <Text style={s.number}>{moneyExact(r.amount)}</Text>
-                  <Text style={[s.muted, { textAlign: "right" }]}>
+                  <Text style={S.number}>{moneyExact(r.amount)}</Text>
+                  <Text style={[S.muted, { textAlign: "right" }]}>
                     {due < 0 ? `due ${-due}d ago` : due === 0 ? "due today" : `next in ${due}d`}
                   </Text>
                 </View>
@@ -231,8 +220,6 @@ export function RecurringCard({ insights }: { insights: Insights | null }) {
 export function BudgetsCard({ budgets, current, progress }: {
   budgets: Map<string, number>; current: MonthTotals | undefined; progress: number;
 }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const [editing, setEditing] = useState(false);
   const rows = [...budgets.entries()]
     .map(([category, monthly]) => ({ category, monthly, spent: current?.byCategory?.[category] ?? 0 }))
@@ -243,7 +230,7 @@ export function BudgetsCard({ budgets, current, progress }: {
       action={<Button small title="Edit" onPress={() => setEditing(true)} />}
       note={rows.length ? "The tick marks where even spending would be today." : undefined}>
       {!rows.length ? (
-        <Text style={[s.muted, { textAlign: "center", paddingVertical: space(4) }]}>
+        <Text style={[S.muted, { textAlign: "center", paddingVertical: space(4) }]}>
           No budgets yet. Tap Edit to set a monthly limit per category.
         </Text>
       ) : rows.map((r) => {
@@ -253,20 +240,20 @@ export function BudgetsCard({ budgets, current, progress }: {
         return (
           <View key={r.category} style={{ marginTop: space(3) }}>
             <Row>
-              <Text style={[s.primary, { flex: 1 }]}>{r.category}</Text>
-              <Text style={[s.secondary, over && { color: t.critical }]}>
+              <Text style={[S.primary, { flex: 1 }]}>{r.category}</Text>
+              <Text style={[S.secondary, over && { color: C.down }]}>
                 {money0(r.spent)} of {money0(r.monthly)}
               </Text>
             </Row>
-            <View style={{ height: 8, borderRadius: 4, backgroundColor: t.grid, marginTop: space(1.5), overflow: "hidden" }}>
+            <View style={{ height: 8, borderRadius: 4, backgroundColor: C.raised, marginTop: space(1.5), overflow: "hidden" }}>
               <View style={{
                 width: `${Math.min(share, 1) * 100}%`, height: "100%", borderRadius: 4,
-                backgroundColor: over ? t.critical : ahead ? t.series[3] : t.series[0],
+                backgroundColor: over ? C.down : ahead ? C.series[3] : C.accent,
               }} />
               <View style={{ position: "absolute", left: `${progress * 100}%`, top: -2, bottom: -2, width: 2,
-                backgroundColor: t.text, opacity: 0.6 }} />
+                backgroundColor: C.text, opacity: 0.6 }} />
             </View>
-            <Text style={[s.muted, { marginTop: 2 }]}>
+            <Text style={[S.muted, { marginTop: 2 }]}>
               {over ? `${money0(r.spent - r.monthly)} over` : `${money0(r.monthly - r.spent)} left${ahead ? " · ahead of pace" : ""}`}
             </Text>
           </View>
@@ -280,7 +267,6 @@ export function BudgetsCard({ budgets, current, progress }: {
 function BudgetEditor({ visible, budgets, onClose }: {
   visible: boolean; budgets: Map<string, number>; onClose: () => void;
 }) {
-  const t = useTheme();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const spendable = CATEGORIES.filter((c) => c !== "Income" && c !== "Transfer");
@@ -305,7 +291,7 @@ function BudgetEditor({ visible, budgets, onClose }: {
       subtitle="Leave a category empty for no budget.">
       {spendable.map((c) => (
         <Row key={c} style={{ marginBottom: space(1) }}>
-          <Text style={{ color: t.text, flex: 1 }}>{c}</Text>
+          <Text style={[T.body, { color: C.text, flex: 1 }]}>{c}</Text>
           <View style={{ width: 120 }}>
             <Field keyboardType="decimal-pad" placeholder="—" value={value(c)}
               onChangeText={(v) => setDraft((d) => ({ ...d, [c]: v.replace(/[^0-9.]/g, "") }))} />

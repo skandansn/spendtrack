@@ -3,6 +3,7 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StatusBar as Bars,
   StyleSheet, Text, TextInput, View,
 } from "react-native";
+import { loadAsync } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 import {
   User, createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword,
@@ -13,7 +14,7 @@ import { auth } from "./src/firebase";
 import { Accounts } from "./src/screens/Accounts";
 import { Dashboard } from "./src/screens/Dashboard";
 import { Transactions } from "./src/screens/Transactions";
-import { Theme, radius, space, useTheme } from "./src/theme";
+import { C, F, T, radius, space } from "./src/theme";
 
 type Tab = "dashboard" | "transactions" | "accounts";
 const TABS: Record<Tab, string> = { dashboard: "Overview", transactions: "Transactions", accounts: "Accounts" };
@@ -23,8 +24,16 @@ const TABS: Record<Tab, string> = { dashboard: "Overview", transactions: "Transa
 const TOP = Platform.OS === "android" ? Bars.currentHeight ?? 24 : 0;
 const BOTTOM = Platform.OS === "android" ? 20 : 0;
 
+// Native builds embed these through the expo-font config plugin; a browser has to fetch them.
+if (Platform.OS === "web") {
+  void loadAsync({
+    [F.grotesk]: require("./assets/fonts/SpaceGrotesk-SemiBold.ttf"),
+    [F.inter]: require("./assets/fonts/Inter-Regular.ttf"),
+    [F.interSemi]: require("./assets/fonts/Inter-SemiBold.ttf"),
+  });
+}
+
 export default function App() {
-  const theme = useTheme();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [filter, setFilter] = useState<TxnFilter>({});
@@ -33,17 +42,16 @@ export default function App() {
 
   if (user === undefined) {
     return (
-      <View style={[styles(theme).center, { backgroundColor: theme.plane }]}>
-        <ActivityIndicator color={theme.muted} />
+      <View style={[s.center, { backgroundColor: C.ground }]}>
+        <ActivityIndicator color={C.accent} />
       </View>
     );
   }
   if (!user) return <SignIn />;
 
-  const s = styles(theme);
   return (
-    <View style={{ flex: 1, backgroundColor: theme.plane, paddingTop: TOP }}>
-      <StatusBar style={theme.text === "#ffffff" ? "light" : "dark"} />
+    <View style={{ flex: 1, backgroundColor: C.ground, paddingTop: TOP }}>
+      <StatusBar style="light" />
       <View style={{ flex: 1 }}>
         {/* Overview stays mounted so its live listeners are not torn down and re-read on every tab switch */}
         <View style={{ flex: 1, display: tab === "dashboard" ? "flex" : "none" }}>
@@ -55,7 +63,9 @@ export default function App() {
       <View style={[s.tabs, { paddingBottom: BOTTOM }]}>
         {(Object.keys(TABS) as Tab[]).map((t) => (
           <Pressable key={t} onPress={() => setTab(t)} style={s.tab}>
-            <Text style={[s.tabText, tab === t && s.tabTextOn]}>{TABS[t]}</Text>
+            <View style={[s.tabPill, tab === t && s.tabPillOn]}>
+              <Text style={[s.tabText, tab === t && s.tabTextOn]}>{TABS[t]}</Text>
+            </View>
           </Pressable>
         ))}
       </View>
@@ -69,8 +79,6 @@ export default function App() {
  * platform. For a one-person app that trade is easy.
  */
 function SignIn() {
-  const theme = useTheme();
-  const s = styles(theme);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -93,19 +101,19 @@ function SignIn() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={[s.center, { backgroundColor: theme.plane, padding: space(6) }]}
+      style={[s.center, { backgroundColor: C.ground, padding: space(6) }]}
     >
       <Text style={s.brand}>spendtrack</Text>
       <Text style={s.sub}>Sign in to see your accounts.</Text>
-      <TextInput style={s.input} placeholder="Email" placeholderTextColor={theme.muted}
+      <TextInput style={s.input} placeholder="Email" placeholderTextColor={C.faint} selectionColor={C.accent}
                  autoCapitalize="none" keyboardType="email-address" autoComplete="email"
                  value={email} onChangeText={setEmail} />
-      <TextInput style={s.input} placeholder="Password" placeholderTextColor={theme.muted}
+      <TextInput style={s.input} placeholder="Password" placeholderTextColor={C.faint} selectionColor={C.accent}
                  secureTextEntry autoComplete="password" returnKeyType="go"
                  onSubmitEditing={() => go(false)}
                  value={password} onChangeText={setPassword} />
       <Pressable style={s.primary} disabled={busy} onPress={() => go(false)}>
-        {busy ? <ActivityIndicator color={theme.plane} />
+        {busy ? <ActivityIndicator color={C.ground} />
               : <Text style={s.primaryText}>Sign in</Text>}
       </Pressable>
       <Pressable disabled={busy} onPress={() => go(true)} style={{ padding: space(3) }}>
@@ -116,27 +124,25 @@ function SignIn() {
   );
 }
 
-const styles = (theme: Theme) => StyleSheet.create({
+const s = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  tabs: {
-    flexDirection: "row", borderTopWidth: 1, borderTopColor: theme.grid,
-    backgroundColor: theme.surface,
-  },
-  tab: { flex: 1, alignItems: "center", paddingVertical: space(3.5) },
-  tabText: { color: theme.muted, fontSize: 13, fontWeight: "500" },
-  tabTextOn: { color: theme.text, fontWeight: "700" },
-  brand: { color: theme.text, fontSize: 28, fontWeight: "700", letterSpacing: -0.8 },
-  sub: { color: theme.muted, marginTop: space(1), marginBottom: space(6) },
+  tabs: { flexDirection: "row", borderTopWidth: 1, borderTopColor: C.raised, backgroundColor: C.ground },
+  tab: { flex: 1, alignItems: "center", justifyContent: "center", height: 64 },
+  tabPill: { height: 32, paddingHorizontal: space(4), borderRadius: radius.pill, justifyContent: "center" },
+  tabPillOn: { backgroundColor: C.accentBg },
+  tabText: { ...T.labelStrong, color: C.muted },
+  tabTextOn: { color: C.accent },
+  brand: { ...T.title, color: C.text },
+  sub: { ...T.label, color: C.muted, marginTop: space(1), marginBottom: space(6) },
   input: {
-    width: "100%", maxWidth: 360, color: theme.text, backgroundColor: theme.surface,
-    borderWidth: 1, borderColor: theme.border, borderRadius: radius.pill,
-    paddingHorizontal: space(4), paddingVertical: space(3), marginBottom: space(2.5),
+    ...T.body, width: "100%", maxWidth: 360, color: C.text, backgroundColor: C.raised,
+    borderRadius: radius.pill, paddingHorizontal: space(4.5), height: 48, marginBottom: space(2.5),
   },
   primary: {
-    width: "100%", maxWidth: 360, backgroundColor: theme.text, borderRadius: radius.pill,
-    paddingVertical: space(3.5), alignItems: "center", marginTop: space(2),
+    width: "100%", maxWidth: 360, backgroundColor: C.accent, borderRadius: radius.pill,
+    height: 48, alignItems: "center", justifyContent: "center", marginTop: space(2),
   },
-  primaryText: { color: theme.plane, fontWeight: "700" },
-  link: { color: theme.textSecondary, fontSize: 13 },
-  error: { color: theme.critical, marginTop: space(2), textTransform: "capitalize" },
+  primaryText: { ...T.bodyStrong, color: C.ground },
+  link: { ...T.label, color: C.muted },
+  error: { ...T.label, color: C.down, marginTop: space(2), textTransform: "capitalize" },
 });

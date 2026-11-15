@@ -1,9 +1,9 @@
 import React, { useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text } from "react-native";
 
 import { callImportLaptop, ImportResult } from "../firebase";
-import { Theme, radius, space, useTheme } from "../theme";
-import { cardStyle } from "./CategoryBars";
+import { C, T, radius, space } from "../theme";
+import { Button, Card } from "../ui";
 
 /**
  * Bring the laptop's database into the cloud.
@@ -13,21 +13,18 @@ import { cardStyle } from "./CategoryBars";
  * instead would cost Plaid Items that never come back.
  */
 export function ImportCard() {
-  const theme = useTheme();
-  const s = sheet(theme);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (Platform.OS !== "web") {
     return (
-      <View style={cardStyle(theme)}>
-        <Text style={s.title}>Bring your data across</Text>
+      <Card title="Bring your data across">
         <Text style={s.body}>
           Open spendtrack in a browser on your laptop to import your existing accounts and
           transactions. It only needs doing once.
         </Text>
-      </View>
+      </Card>
     );
   }
 
@@ -54,8 +51,7 @@ export function ImportCard() {
   };
 
   return (
-    <View style={cardStyle(theme)}>
-      <Text style={s.title}>Bring your data across</Text>
+    <Card title="Bring your data across">
       {result ? (
         <Text style={s.done}>
           Imported {result.transactions.toLocaleString()} transactions across {result.months} months,
@@ -68,36 +64,26 @@ export function ImportCard() {
             On your laptop, in the spendtrack folder, run:
           </Text>
           <Text style={s.code}>python -m spendtrack.cli export</Text>
-          <Text style={s.body}>
+          <Text style={[s.body, { marginBottom: space(4) }]}>
             then pick the file it writes. Your banks come across already linked, with every
             split, cashback and category you set - no re-linking, so no Plaid Items spent.
           </Text>
-          <Pressable style={s.button} onPress={pick} disabled={busy}>
-            {busy ? <ActivityIndicator color={theme.plane} />
-                  : <Text style={s.buttonText}>Choose export file</Text>}
-          </Pressable>
+          <Button kind="primary" title="Choose export file" busy={busy} onPress={pick} />
           {busy ? <Text style={s.note}>Writing a couple of thousand documents - under a minute.</Text> : null}
           {error ? <Text style={s.error}>{error}</Text> : null}
         </>
       )}
-    </View>
+    </Card>
   );
 }
 
-const sheet = (theme: Theme) => StyleSheet.create({
-  title: { color: theme.text, fontSize: 17, fontWeight: "600", marginBottom: space(2) },
-  body: { color: theme.textSecondary, fontSize: 14, lineHeight: 20 },
+const s = StyleSheet.create({
+  body: { ...T.label, color: C.muted },
   code: {
-    color: theme.text, fontFamily: Platform.select({ web: "ui-monospace, monospace", default: "monospace" }),
-    backgroundColor: theme.plane, borderRadius: radius.small, padding: space(3),
-    marginVertical: space(3), fontSize: 13,
+    ...T.label, color: C.text, fontFamily: Platform.select({ web: "ui-monospace, monospace", default: "monospace" }),
+    backgroundColor: C.raised, borderRadius: radius.row, padding: space(3), marginVertical: space(3),
   },
-  button: {
-    backgroundColor: theme.text, borderRadius: radius.pill, paddingVertical: space(3.5),
-    alignItems: "center", marginTop: space(4),
-  },
-  buttonText: { color: theme.plane, fontWeight: "700" },
-  note: { color: theme.muted, fontSize: 12, marginTop: space(2), textAlign: "center" },
-  done: { color: theme.good, fontSize: 14, lineHeight: 20 },
-  error: { color: theme.critical, marginTop: space(3) },
+  note: { ...T.small, color: C.muted, marginTop: space(2), textAlign: "center" },
+  done: { ...T.label, color: C.accent },
+  error: { ...T.label, color: C.down, marginTop: space(3) },
 });

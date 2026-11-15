@@ -3,8 +3,8 @@ import { Platform, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 
 import { callCompleteHostedLink, callExchangeToken, callLinkToken } from "../firebase";
-import { space, useTheme } from "../theme";
-import { Button, textStyles } from "../ui";
+import { space } from "../theme";
+import { Button, S } from "../ui";
 
 /**
  * Connect a bank. Each one permanently uses one of the free Plaid Trial's ten
@@ -19,8 +19,6 @@ import { Button, textStyles } from "../ui";
 export function LinkBank({ itemId, label = "Link a bank or card", onLinked }: {
   itemId?: string; label?: string; onLinked: (institution: string | null) => void;
 }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const reauth = Boolean(itemId);
@@ -78,11 +76,11 @@ export function LinkBank({ itemId, label = "Link a bank or card", onLinked }: {
     <View>
       <Button kind={reauth ? "secondary" : "primary"} title={label} busy={busy} onPress={start} />
       {!reauth ? (
-        <Text style={[s.muted, { marginTop: space(2), textAlign: "center" }]}>
+        <Text style={[S.muted, { marginTop: space(2), textAlign: "center" }]}>
           Uses one of your free Plaid Items for good. Re-signing-in to a linked bank does not.
         </Text>
       ) : null}
-      {note ? <Text style={[s.secondary, { marginTop: space(2), textAlign: "center" }]}>{note}</Text> : null}
+      {note ? <Text style={[S.secondary, { marginTop: space(2), textAlign: "center" }]}>{note}</Text> : null}
     </View>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { CategoryBars, Row as BarRow } from "../components/CategoryBars";
 import { ImportCard } from "../components/ImportCard";
@@ -14,11 +14,12 @@ import {
 } from "../data";
 import { callSync, SyncOutcome } from "../firebase";
 import { money0, monthName, monthProgress } from "../money";
-import { radius, space, useTheme } from "../theme";
-import { Button, Card, Chips, Sheet, textStyles } from "../ui";
+import { C, T, radius, space } from "../theme";
+import { Card, ChangePill, Chip, Chips, S, ScreenHeader, SearchField, Sheet, screen } from "../ui";
 
 const PERIODS = ["1", "3", "6", "12", "24"] as const;
 type Period = (typeof PERIODS)[number];
+const PERIOD_LABELS: Record<Period, string> = { "1": "This month", "3": "3 mo", "6": "6 mo", "12": "12 mo", "24": "24 mo" };
 const ALL = "all";
 
 interface Scope { accountId: string | null; category: string | null; q: string | null }
@@ -44,8 +45,6 @@ function narrow(m: MonthTotals, { accountId, category }: Scope): MonthTotals {
 }
 
 export function Dashboard({ onOpen }: { onOpen: (filter: TxnFilter) => void }) {
-  const t = useTheme();
-  const s = textStyles(t);
   const [period, setPeriod] = useState<Period>("6");
   const count = Number(period);
   // Subscribe to every month any period or its comparison window can touch:
@@ -77,6 +76,7 @@ export function Dashboard({ onOpen }: { onOpen: (filter: TxnFilter) => void }) {
   const lastSync = useLastSync();
   const [syncing, setSyncing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   const months = all.slice(0, count);
   const before = all.slice(count, count * 2);
@@ -121,14 +121,16 @@ export function Dashboard({ onOpen }: { onOpen: (filter: TxnFilter) => void }) {
     ({ accountId: scope.accountId, category: scope.category, q: scope.q, ...extra });
 
   const sync = async () => {
-    setSyncing(true); setNote(null);
+    setSyncing(true); setNote(null); setFailed(false);
     try {
       const { data } = await callSync();
-      const failed = data.results.filter((r: SyncOutcome) => r.error);
-      setNote(failed.length
-        ? failed.map((r) => `${r.institution}: ${r.error}`).join("\n")
+      const failures = data.results.filter((r: SyncOutcome) => r.error);
+      setFailed(failures.length > 0);
+      setNote(failures.length
+        ? failures.map((r) => `${r.institution}: ${r.error}`).join("\n")
         : data.results.map((r) => `${r.institution} +${r.added}`).join("   ") || "Nothing linked yet.");
     } catch (e) {
+      setFailed(true);
       setNote((e as Error).message);
     } finally {
       setSyncing(false);
@@ -136,54 +138,41 @@ export function Dashboard({ onOpen }: { onOpen: (filter: TxnFilter) => void }) {
   };
 
   return (
-    <ScrollView style={{ backgroundColor: t.plane }}
-      contentContainerStyle={{ padding: space(4), paddingBottom: space(16), gap: space(4) }}
-      refreshControl={<RefreshControl refreshing={syncing} onRefresh={sync} tintColor={t.muted} />}>
+    <ScrollView style={{ backgroundColor: C.ground }} contentContainerStyle={screen}
+      refreshControl={<RefreshControl refreshing={syncing} onRefresh={sync} tintColor={C.accent}
+        colors={[C.ground]} progressBackgroundColor={C.accent} />}>
 
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View>
-          <Text style={{ color: t.text, fontSize: 26, fontWeight: "700", letterSpacing: -0.8 }}>spendtrack</Text>
-          <Text style={s.muted}>
-            {lastSync ? `synced ${lastSync.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "never synced"}
-          </Text>
-        </View>
-        <Button kind="primary" title="Sync" busy={syncing} onPress={sync} />
-      </View>
-      {note ? <Text style={s.muted}>{note}</Text> : null}
+      <ScreenHeader overline={new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}
+        title="Overview" trailing={<SyncPill syncing={syncing} failed={failed} at={lastSync} onPress={sync} />} />
+      {note ? <Text style={S.muted}>{note}</Text> : null}
 
       {!loading && accounts.length === 0 ? <ImportCard /> : null}
 
-      <Chips options={PERIODS} value={period} onChange={setPeriod}
-        labels={{ "1": "This month", "3": "3 mo", "6": "6 mo", "12": "12 mo", "24": "24 mo" }} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space(1.5) }}>
+        {PERIODS.map((p) => <Chip key={p} label={PERIOD_LABELS[p]} on={p === period} onPress={() => setPeriod(p)} />)}
+      </ScrollView>
 
-      <View style={{ gap: space(2) }}>
-        <TextInput value={text} onChangeText={setText} placeholder="Search merchants" placeholderTextColor={t.muted}
-          autoCapitalize="none" autoCorrect={false} returnKeyType="search"
-          style={{
-            color: t.text, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border,
-            borderRadius: radius.pill, paddingHorizontal: space(4), paddingVertical: space(2.5), fontSize: 15,
-          }} />
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2) }}>
-          <ScopeChip label={scope.accountId ? accountLabel(scope.accountId) : "All accounts"} on={!!scope.accountId}
+      <View style={{ gap: space(2.5) }}>
+        <SearchField value={text} onChangeText={setText} />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(1.5) }}>
+          <Chip label={scope.accountId ? accountLabel(scope.accountId) : "All accounts"} on={!!scope.accountId}
             onPress={() => setPicking("account")} />
-          <ScopeChip label={scope.category ?? "All categories"} on={!!scope.category}
+          <Chip label={scope.category ?? "All categories"} on={!!scope.category}
             onPress={() => setPicking("category")} />
           {scope.accountId || scope.category || scope.q ? (
-            <ScopeChip label="Clear" on={false}
+            <Chip label="Clear" on={false}
               onPress={() => { setScope({ accountId: null, category: null, q: null }); setText(""); }} />
           ) : null}
         </View>
       </View>
 
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(3) }}>
-        <Tile hero label={`Spent in ${monthName(thisMonth(), true)}`} value={money0(current?.total ?? 0)}
-          foot={delta == null ? undefined
-            : `${delta > 0 ? "▲" : "▼"} ${Math.abs(Math.round(delta * 100))}% vs ${monthName(all[1]!)} so far`}
-          tone={delta != null && delta > 0 ? "bad" : "good"} />
+      <Hero spent={current?.total ?? 0} delta={delta} months={all.slice(0, 6).reverse()} totals={totals} />
+
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space(2.5) }}>
         {count > 1 ? (
           <Tile label={`Spent, last ${count} mo`} value={money0(spend)}
             foot={[
-              spendBefore ? `${spend > spendBefore ? "▲" : "▼"} ${Math.abs(Math.round((spend - spendBefore) / spendBefore * 100))}% vs the ${count} before` : null,
+              spendBefore ? `${signedPct((spend - spendBefore) / spendBefore)} vs the ${count} before` : null,
               Number.isNaN(count_) ? null : `${count_} txns`,
             ].filter(Boolean).join(" · ") || undefined}
             tone={spendBefore && spend > spendBefore ? "bad" : undefined} />
@@ -234,14 +223,67 @@ export function Dashboard({ onOpen }: { onOpen: (filter: TxnFilter) => void }) {
   );
 }
 
-function ScopeChip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
-  const t = useTheme();
+const signedPct = (change: number) =>
+  `${change > 0 ? "+" : change < 0 ? "−" : ""}${Math.abs(Math.round(change * 100))}%`;
+
+/**
+ * The one number the screen leads with, and the last six months under it so
+ * this month's figure has something to be read against.
+ */
+function Hero({ spent, delta, months, totals }: {
+  spent: number; delta: number | null; months: string[]; totals: Map<string, MonthTotals>;
+}) {
+  const values = months.map((m) => Math.max(totals.get(m)?.total || 0, 0));
+  const max = Math.max(...values, 1);
   return (
-    <Pressable onPress={onPress} style={{
-      paddingHorizontal: space(3.5), paddingVertical: space(2), borderRadius: radius.pill, borderWidth: 1,
-      borderColor: on ? t.text : t.border, backgroundColor: on ? t.text : "transparent",
-    }}>
-      <Text style={{ color: on ? t.plane : t.textSecondary, fontSize: 13, fontWeight: on ? "600" : "400" }}>{label}</Text>
+    <Card>
+      <Text style={[T.label, { color: C.muted }]}>Spent in {monthName(thisMonth(), true)}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space(3), marginTop: space(3) }}>
+        <Text style={[T.display, { color: C.text, flexShrink: 1 }]} numberOfLines={1}
+          adjustsFontSizeToFit minimumFontScale={0.5}>{money0(spent)}</Text>
+        {delta != null ? <ChangePill change={delta} /> : null}
+      </View>
+      <Text style={[T.label, { color: C.muted, marginTop: space(3) }]}>
+        {delta != null ? `vs ${monthName(months[months.length - 2]!, true)} at this point in the month` : "Nothing to compare against yet"}
+      </Text>
+      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space(1.5), height: 96, marginTop: space(4) }}
+        accessibilityLabel={`Spend over the last ${months.length} months`}>
+        {values.map((v, i) => (
+          <View key={months[i]} style={{
+            flex: 1, height: `${Math.max(v / max, 0.03) * 100}%`, borderRadius: 3,
+            backgroundColor: i === values.length - 1 ? C.accent : C.accentDim,
+          }} />
+        ))}
+      </View>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: space(2) }}>
+        <Text style={[T.small, { color: C.muted }]}>{monthName(months[0]!, true)}</Text>
+        <Text style={[T.small, { color: C.muted }]}>This month</Text>
+      </View>
+    </Card>
+  );
+}
+
+function SyncPill({ syncing, failed, at, onPress }: {
+  syncing: boolean; failed: boolean; at: Date | null; onPress: () => void;
+}) {
+  const [text, dot] = syncing ? ["Syncing…", C.second]
+    : failed ? ["Sync failed · retry", C.down]
+    : [at ? `Synced ${ago(at)}` : "Not synced", C.accent];
+  return (
+    <Pressable onPress={onPress} disabled={syncing} accessibilityLabel="Sync now" style={({ pressed }) => ({
+      flexDirection: "row", alignItems: "center", gap: space(1.5), height: 36, paddingHorizontal: space(3),
+      borderRadius: radius.pill, backgroundColor: C.surface, opacity: pressed ? 0.7 : 1,
+    })}>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot }} />
+      <Text style={[T.small, { color: C.muted }]}>{text}</Text>
     </Pressable>
   );
+}
+
+function ago(at: Date): string {
+  const mins = Math.floor((Date.now() - at.getTime()) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 24 * 60) return `${Math.floor(mins / 60)} h ago`;
+  return `${Math.floor(mins / (24 * 60))} d ago`;
 }

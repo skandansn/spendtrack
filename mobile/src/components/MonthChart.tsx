@@ -3,7 +3,7 @@ import { Pressable, Text, View } from "react-native";
 
 import { MonthTotals } from "../data";
 import { money0, monthName } from "../money";
-import { space, useTheme } from "../theme";
+import { C, T, space } from "../theme";
 
 const TOP = 7;
 const HEIGHT = 170;
@@ -20,7 +20,6 @@ const HEIGHT = 170;
  * A phone has no hover, so tapping a segment pins its figure under the chart.
  */
 export function MonthChart({ months, totals }: { months: string[]; totals: Map<string, MonthTotals> }) {
-  const t = useTheme();
   const [picked, setPicked] = useState<{ month: string; category: string; amount: number } | null>(null);
   const ordered = useMemo(() => [...months].reverse(), [months]);   // oldest on the left
 
@@ -46,7 +45,7 @@ export function MonthChart({ months, totals }: { months: string[]; totals: Map<s
   }, [months, totals]);
 
   const colour = (category: string) =>
-    t.series[Math.min(stack.indexOf(category), t.series.length - 1)] ?? t.series[t.series.length - 1]!;
+    C.series[Math.min(stack.indexOf(category), C.series.length - 1)] ?? C.series[C.series.length - 1]!;
 
   const segments = (month: string) => {
     const byCategory = totals.get(month)?.byCategory ?? {};
@@ -60,21 +59,21 @@ export function MonthChart({ months, totals }: { months: string[]; totals: Map<s
     return stack.filter((c) => folded.has(c)).map((c) => ({ category: c, amount: folded.get(c)! }));
   };
 
-  if (!max) return <Text style={{ color: t.muted, textAlign: "center", padding: space(6) }}>No spend yet.</Text>;
+  if (!max) return <Text style={[T.label, { color: C.muted, textAlign: "center", padding: space(6) }]}>No spend yet.</Text>;
 
   return (
     <View>
       <View style={{ flexDirection: "row" }}>
         <View style={{ width: 46, height: HEIGHT, justifyContent: "space-between" }}>
           {[1, 0.75, 0.5, 0.25, 0].map((f) => (
-            <Text key={f} style={{ color: t.muted, fontSize: 10, textAlign: "right", paddingRight: space(1.5),
-              fontVariant: ["tabular-nums"] }}>{money0(max * f)}</Text>
+            <Text key={f} style={{ ...T.small, fontSize: 10, color: C.muted, textAlign: "right", paddingRight: space(1.5),
+              }}>{money0(max * f)}</Text>
           ))}
         </View>
         <View style={{ flex: 1, height: HEIGHT }}>
           {[0, 0.25, 0.5, 0.75, 1].map((f) => (
             <View key={f} style={{ position: "absolute", left: 0, right: 0, top: f * (HEIGHT - 1),
-              borderTopWidth: 1, borderTopColor: t.grid }} />
+              borderTopWidth: 1, borderTopColor: C.line }} />
           ))}
           <View style={{ flex: 1, flexDirection: "row", alignItems: "flex-end", gap: space(1.5) }}>
             {ordered.map((month) => (
@@ -98,13 +97,13 @@ export function MonthChart({ months, totals }: { months: string[]; totals: Map<s
       </View>
       <View style={{ flexDirection: "row", marginLeft: 46, marginTop: space(1.5), gap: space(1.5) }}>
         {ordered.map((m) => (
-          <Text key={m} style={{ flex: 1, color: t.muted, fontSize: 10, textAlign: "center" }}>
+          <Text key={m} style={{ ...T.small, fontSize: 10, flex: 1, color: C.muted, textAlign: "center" }}>
             {monthName(m)}
           </Text>
         ))}
       </View>
 
-      <Text style={{ color: picked ? t.text : t.muted, fontSize: 13, marginTop: space(3), minHeight: 18 }}>
+      <Text style={[T.label, { color: picked ? C.text : C.muted, marginTop: space(3), minHeight: 18 }]}>
         {picked
           ? `${picked.category} in ${monthName(picked.month, true)}: ${money0(picked.amount)}`
           : "Tap a segment for its figure."}
@@ -114,7 +113,7 @@ export function MonthChart({ months, totals }: { months: string[]; totals: Map<s
         {stack.map((c) => (
           <View key={c} style={{ flexDirection: "row", alignItems: "center", gap: space(1.5) }}>
             <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: colour(c) }} />
-            <Text style={{ color: t.textSecondary, fontSize: 12 }}>{c}</Text>
+            <Text style={[T.small, { color: C.muted }]}>{c}</Text>
           </View>
         ))}
       </View>
