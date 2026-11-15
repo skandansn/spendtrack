@@ -244,7 +244,7 @@ function Hero({ spent, delta, months, totals }: {
         {delta != null ? <ChangePill change={delta} /> : null}
       </View>
       <Text style={[T.label, { color: C.muted, marginTop: space(3) }]}>
-        {delta != null ? `vs ${monthName(months[months.length - 2]!, true)} at this point in the month` : "Nothing to compare against yet"}
+        {delta != null ? `vs ${monthName(months[months.length - 2]!)} at this point in the month` : "Nothing to compare against yet"}
       </Text>
       <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space(1.5), height: 96, marginTop: space(4) }}
         accessibilityLabel={`Spend over the last ${months.length} months`}>
@@ -256,7 +256,7 @@ function Hero({ spent, delta, months, totals }: {
         ))}
       </View>
       <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: space(2) }}>
-        <Text style={[T.small, { color: C.muted }]}>{monthName(months[0]!, true)}</Text>
+        <Text style={[T.small, { color: C.muted }]}>{monthName(months[0]!)}</Text>
         <Text style={[T.small, { color: C.muted }]}>This month</Text>
       </View>
     </Card>

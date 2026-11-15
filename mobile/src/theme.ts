@@ -1,8 +1,8 @@
 /**
  * Design tokens, shared with MusicStats so the two apps read as one family:
- * a near-black ground, borderless raised panels, lime for the thing that
- * matters, orange for what went the wrong way, Space Grotesk for figures and
- * Inter for words. Dark only, as there.
+ * borderless raised panels, lime for the thing that matters, orange for what
+ * went the wrong way, Space Grotesk for figures and Inter for words. Dark only,
+ * as there, but on pure black so an OLED screen leaves the ground unlit.
  *
  * Each weight is its own font file: Android ignores fontWeight on a custom
  * family, so the weight is chosen by family name and fontWeight is never set.
@@ -11,7 +11,7 @@
 import { TextStyle } from "react-native";
 
 export const C = {
-  ground: "#0B0B0E",
+  ground: "#000000",
   surface: "#15151A",
   raised: "#1E1E25",
   line: "#2A2A33",
